@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            width: 300px;
+            padding: 15px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e2f;
+            color: #ffffff;
+        }
+        h3 {
+            margin-top: 0;
+            text-align: center;
+            color: #61dafb;
+        }
+        .timer-box {
+            background: #2d2d44;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+            text-align: center;
+            border: 1px solid #44475a;
+        }
+        .timer-label {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        .timer-value {
+            font-size: 28px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            color: #f8f8f2;
+        }
+        .section {
+            margin-bottom: 15px;
+            border-top: 1px solid #44475a;
+            padding-top: 10px;
+        }
+        .section-title {
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #bd93f9;
+        }
+        select, input {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            background: #2d2d44;
+            color: white;
+            border: 1px solid #6272a4;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            margin: 5px 0;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            background-color: #6272a4;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #7a93d1;
+        }
+        button.danger {
+            background-color: #ff5555;
+        }
+        button.danger:hover {
+            background-color: #ff8888;
+        }
+        .switch-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            width: 120px;
+            padding: 0;
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 12px;
+            text-align: center;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <h3>⏱️ Job Timer Macro Pro</h3>
+    
+    <!-- Timer Display -->
+    <div class="timer-box">
+        <div class="timer-label">Current Job Timer</div>
+        <div id="timerDisplay" class="timer-value">--:--:--</div>
+    </div>
+
+    <!-- Macro Selection -->
+    <div class="section">
+        <div class="section-title">📋 Saved Macros</div>
+        <select id="macroSelect">
+            <option value="">-- No macros --</option>
+        </select>
+        <button id="runMacroBtn">▶️ Run Selected Macro</button>
+        <button id="deleteMacroBtn" class="danger">🗑️ Delete Selected</button>
+    </div>
+
+    <!-- Recording Controls -->
+    <div class="section">
+        <div class="section-title">🎤 Recording</div>
+        <button id="recordBtn">🔴 Start Recording</button>
+        <button id="testBtn">🧪 Test Current Macro</button>
+    </div>
+
+    <!-- Alarm Settings -->
+    <div class="section">
+        <div class="section-title">⏰ 5-Minute Alarm</div>
+        <div class="switch-row">
+            <span>Enable Alarm</span>
+            <label>
+                <input type="checkbox" id="alarmToggle"> On
+            </label>
+        </div>
+        <div class="switch-row">
+            <span>Continuous (beep every 2s)</span>
+            <label>
+                <input type="checkbox" id="continuousToggle"> On
+            </label>
+        </div>
+        <div class="slider-container">
+            <span>Volume:</span>
+            <input type="range" id="volumeSlider" min="0" max="100" value="50">
+            <span id="volumeValue">50%</span>
+        </div>
+        <button id="testAlarmBtn">🔊 Test Alarm</button>
+        <button id="stopAlarmBtn" class="danger" disabled>🛑 Stop Alarm</button>
+    </div>
+
+    <div id="status">Status: Ready</div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

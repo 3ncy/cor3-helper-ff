@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Job Timer Macro Pro",
+  "version": "2.0",
+  "description": "Record macros, monitor job timers, and get alerts.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://cor3.gg/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://cor3.gg/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Job Timer Macro"
+  }
+}
