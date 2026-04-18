@@ -784,11 +784,13 @@ function renderMarket(data) {
     if (data && data.market && data.market.marketName) {
         coreMarketName = data.market.marketName;
         updateMarketLabel(coreMarketLabel, coreMarketName, 'Market-1', '🏠');
-        // Update alarm dropdown option text
+        // Update alarm dropdown option text and alarm list labels
+        TIMER_LABELS.home_jobs = coreMarketName + ' Jobs Reset';
         const opt = alarmTimerSelect.querySelector('option[value="home_jobs"]');
-        if (opt) opt.textContent = coreMarketName + ' Jobs Reset';
-        // Re-render pinned timers to update labels
+        if (opt) opt.textContent = TIMER_LABELS.home_jobs;
+        // Re-render pinned timers and alarm list to update labels
         renderPinnedTimers();
+        renderAlarmList();
     }
     renderMarketInto(marketContainer, data, 'Market-1', 'home');
 }
@@ -803,11 +805,13 @@ function renderDarkMarket(data, available) {
     if (data && data.market && data.market.marketName) {
         darkMarketName = data.market.marketName;
         updateMarketLabel(darkMarketLabel, darkMarketName, 'Market-2', '🌑');
-        // Update alarm dropdown option text
+        // Update alarm dropdown option text and alarm list labels
+        TIMER_LABELS.dark_jobs = darkMarketName + ' Jobs Reset';
         const opt = alarmTimerSelect.querySelector('option[value="dark_jobs"]');
-        if (opt) opt.textContent = darkMarketName + ' Jobs Reset';
-        // Re-render pinned timers to update labels
+        if (opt) opt.textContent = TIMER_LABELS.dark_jobs;
+        // Re-render pinned timers and alarm list to update labels
         renderPinnedTimers();
+        renderAlarmList();
     }
     renderMarketInto(darkMarketContainer, data, 'Market-2', 'dark');
 }
@@ -896,8 +900,9 @@ chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable']
         if (result.marketData.market && result.marketData.market.marketName) {
             coreMarketName = result.marketData.market.marketName;
             updateMarketLabel(coreMarketLabel, coreMarketName, 'Market-1', '🏠');
+            TIMER_LABELS.home_jobs = coreMarketName + ' Jobs Reset';
             const opt = alarmTimerSelect.querySelector('option[value="home_jobs"]');
-            if (opt) opt.textContent = coreMarketName + ' Jobs Reset';
+            if (opt) opt.textContent = TIMER_LABELS.home_jobs;
         }
         renderMarket(result.marketData);
     } else {
@@ -908,8 +913,9 @@ chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable']
         if (result.darkMarketData.market && result.darkMarketData.market.marketName) {
             darkMarketName = result.darkMarketData.market.marketName;
             updateMarketLabel(darkMarketLabel, darkMarketName, 'Market-2', '🌑');
+            TIMER_LABELS.dark_jobs = darkMarketName + ' Jobs Reset';
             const opt = alarmTimerSelect.querySelector('option[value="dark_jobs"]');
-            if (opt) opt.textContent = darkMarketName + ' Jobs Reset';
+            if (opt) opt.textContent = TIMER_LABELS.dark_jobs;
         }
         renderDarkMarket(result.darkMarketData, result.darkMarketAvailable);
     } else {
@@ -1050,9 +1056,30 @@ function renderPinnedTimers() {
         pinnedTimersContainer.appendChild(row);
     }
 
-    // Resolve expedition names from storage
-    chrome.storage.local.get('expeditionsData', (result) => {
+    // Resolve expedition names from storage and clean up stale pins
+    chrome.storage.local.get('expeditionsData', async (result) => {
         const exps = result.expeditionsData || [];
+        const activeExpIds = new Set(exps.map(e => e.id));
+        let staleRemoved = false;
+
+        // Remove pins for expeditions that no longer exist
+        for (const key of Object.keys(pinnedTimers)) {
+            if (key.startsWith('exp_') && pinnedTimers[key]) {
+                const expId = key.substring(4);
+                if (!activeExpIds.has(expId)) {
+                    delete pinnedTimers[key];
+                    delete expeditionEndTimes[expId];
+                    staleRemoved = true;
+                }
+            }
+        }
+
+        if (staleRemoved) {
+            await savePinnedState();
+            renderPinnedTimers();
+            return; // re-render will re-enter this block with clean state
+        }
+
         for (const exp of exps) {
             if (exp.endTime) expeditionEndTimes[exp.id] = exp.endTime;
             const labelEl = pinnedTimersContainer.querySelector(`.pinned-exp-label[data-exp-id="${exp.id}"]`);
