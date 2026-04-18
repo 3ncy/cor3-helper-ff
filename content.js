@@ -133,7 +133,19 @@ function getTimerRemainingSeconds(timerSource) {
                     resolve(null);
                 }
             });
-        } else {
+        } else if (timerSource.startsWith('exp_')) {
+            const expId = timerSource.substring(4);
+            chrome.storage.local.get('expeditionsData', (result) => {
+                const exps = result.expeditionsData || [];
+                const exp = exps.find(e => e.id === expId);
+                if (exp && exp.endTime) {
+                    const diff = new Date(exp.endTime).getTime() - Date.now();
+                    resolve(diff > 0 ? Math.floor(diff / 1000) : 0);
+                } else {
+                    resolve(null);
+                }
+            });
+		} else {
             resolve(null);
         }
     });

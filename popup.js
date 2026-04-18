@@ -67,6 +67,26 @@ const TIMER_LABELS = {
     dark_jobs: 'Market-2 Jobs Reset'
 };
 
+// Dynamically populate expedition options in alarm timer select
+const alarmExpeditionGroup = document.getElementById('alarmExpeditionGroup');
+
+function updateExpeditionAlarmOptions(expeditions) {
+    if (!alarmExpeditionGroup) return;
+    alarmExpeditionGroup.innerHTML = '';
+    if (!expeditions || expeditions.length === 0) return;
+    for (const exp of expeditions) {
+        if (!exp.endTime) continue;
+        const opt = document.createElement('option');
+        opt.value = 'exp_' + exp.id;
+        const label = (exp.locationName || 'Expedition') + ' — ' + (exp.zoneName || '');
+        opt.textContent = label;
+        TIMER_LABELS['exp_' + exp.id] = label;
+        alarmExpeditionGroup.appendChild(opt);
+    }
+    // Re-render alarm list to update labels for any existing expedition alarms
+    renderAlarmList();
+}
+
 alarmVolumeSlider.addEventListener('input', () => {
     alarmVolumeLabel.textContent = alarmVolumeSlider.value + '%';
 });
@@ -406,6 +426,7 @@ async function loadExpeditions() {
     const { expeditionsData, expeditionDecisions } = await chrome.storage.local.get(['expeditionsData', 'expeditionDecisions']);
     renderExpeditionInfo(expeditionsData || []);
     renderDecisions(expeditionDecisions || []);
+    updateExpeditionAlarmOptions(expeditionsData || []);
     refreshAllTimestamps();
 }
 
