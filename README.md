@@ -42,6 +42,7 @@ A Chrome extension that enhances the [cor3.gg](https://cor3.gg) experience by mo
 - **Per-section refresh** buttons let you refresh individual data types.
 - **Alarms** — Click ➕ in the Alarms section to create a new alarm. Choose a timer source, set a threshold, and configure volume/continuous beeping. Toggle alarms on/off or edit/delete them anytime.
 - **Pin timers** to keep them visible at the top of the popup.
+- **Auto job refresh** feature can be used after pinning timers and clicking the "Auto" checkbox next to it.
 
 ## Files
 
