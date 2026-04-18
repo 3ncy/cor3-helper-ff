@@ -42,6 +42,56 @@ document.addEventListener('click', () => {
 
 const statusDiv = document.getElementById('status');
 
+// --- Pop Out / Side Panel ---
+const popOutBtn = document.getElementById('popOutBtn');
+const sidePanelBtn = document.getElementById('sidePanelBtn');
+
+// Detect if we're running inside a popout window (via ?mode=popout query param)
+(function detectMode() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'popout') {
+        document.body.classList.add('mode-popout');
+    }
+})();
+
+// Helper: find the cor3.gg tab across all windows (needed for pop-out window mode)
+async function getCor3Tab() {
+    // First try the active tab in the current window (works for popup & side panel)
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab && activeTab.url && (activeTab.url.includes('cor3.gg') || activeTab.url.includes('os.cor3.gg'))) {
+        return activeTab;
+    }
+    // Fallback: search all tabs for a cor3.gg tab (needed for pop-out window)
+    const allTabs = await chrome.tabs.query({ url: ['https://cor3.gg/*', 'https://os.cor3.gg/*'] });
+    return allTabs.length > 0 ? allTabs[0] : null;
+}
+
+if (popOutBtn) {
+    popOutBtn.addEventListener('click', () => {
+        chrome.windows.create({
+            url: chrome.runtime.getURL('popup.html?mode=popout'),
+            type: 'popup',
+            width: 360,
+            height: 700
+        });
+        window.close();
+    });
+}
+
+if (sidePanelBtn) {
+    sidePanelBtn.addEventListener('click', async () => {
+        try {
+            const tab = await getCor3Tab();
+            if (!tab) { statusDiv.textContent = 'No cor3.gg tab found.'; return; }
+            await chrome.sidePanel.open({ tabId: tab.id });
+            window.close();
+        } catch (e) {
+            // Fallback: if sidePanel API isn't available, notify user
+            statusDiv.textContent = 'Side panel not supported in this browser.';
+        }
+    });
+}
+
 // --- Multi-Alarm System ---
 const alarmList = document.getElementById('alarmList');
 const alarmForm = document.getElementById('alarmForm');
@@ -108,15 +158,14 @@ async function saveAlarms() {
     sendAlarmsToContent();
 }
 
-function sendAlarmsToContent() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: "updateAlarms",
-                alarms: alarms
-            }).catch(() => {});
-        }
-    });
+async function sendAlarmsToContent() {
+    const tab = await getCor3Tab();
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, {
+            action: "updateAlarms",
+            alarms: alarms
+        }).catch(() => {});
+    }
 }
 
 function renderAlarmList() {
@@ -222,25 +271,23 @@ saveAlarmBtn.addEventListener('click', async () => {
     closeAlarmForm();
 });
 
-testAlarmBtn.addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: "testAlarm",
-                volume: parseInt(alarmVolumeSlider.value),
-                continuous: alarmContinuous.checked
-            });
-        }
-    });
+testAlarmBtn.addEventListener('click', async () => {
+    const tab = await getCor3Tab();
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, {
+            action: "testAlarm",
+            volume: parseInt(alarmVolumeSlider.value),
+            continuous: alarmContinuous.checked
+        });
+    }
 });
 
-stopAllAlarmsBtn.addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, { action: "stopAlarm" });
-            stopAllAlarmsBtn.style.display = 'none';
-        }
-    });
+stopAllAlarmsBtn.addEventListener('click', async () => {
+    const tab = await getCor3Tab();
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, { action: "stopAlarm" });
+        stopAllAlarmsBtn.style.display = 'none';
+    }
 });
 
 // Listen for alarm status from content script
@@ -435,8 +482,8 @@ async function requestExpeditions() {
     // Clear old data so poll detects fresh arrival
     await chrome.storage.local.remove(['expeditionsData', 'expeditionDecisions']);
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        await chrome.tabs.sendMessage(tab.id, { action: "requestExpeditions" });
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestExpeditions" });
     } catch (e) { /* not reachable */ }
     // Poll for expedition data
     let loaded = false;
@@ -483,8 +530,8 @@ async function requestAndLoadInventory() {
     inventoryContainer.innerHTML = '<div class="no-decisions">Requesting inventory from server...</div>';
     spaceInfo.textContent = '-- / --';
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        await chrome.tabs.sendMessage(tab.id, { action: "requestStash" });
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestStash" });
     } catch (e) { /* not reachable */ }
     // Wait for WS response (leave + rejoin with human delays), then load from storage
     setTimeout(() => loadInventory(), 2500);
@@ -583,7 +630,8 @@ function updateDailyTimer() {
 
 async function fetchDailyOps() {
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = await getCor3Tab();
+        if (!tab) throw new Error('No cor3.gg tab');
         const response = await chrome.tabs.sendMessage(tab.id, { action: "fetchDailyOps" });
         if (response && response.data) {
             const data = response.data;
@@ -832,9 +880,11 @@ async function requestMarketData() {
     darkMarketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
     await chrome.storage.local.remove(['marketData', 'darkMarketData', 'darkMarketAvailable']);
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        await chrome.tabs.sendMessage(tab.id, { action: "requestMarket" });
-        await chrome.tabs.sendMessage(tab.id, { action: "requestDarkMarket" });
+        const tab = await getCor3Tab();
+        if (tab) {
+            await chrome.tabs.sendMessage(tab.id, { action: "requestMarket" });
+            await chrome.tabs.sendMessage(tab.id, { action: "requestDarkMarket" });
+        }
     } catch (e) { /* content script not reachable */ }
     // Poll for both markets to arrive
     return new Promise((resolve) => {
@@ -870,7 +920,8 @@ async function requestMarketData() {
 async function refreshMarketData() {
     marketContainer.innerHTML = '<div class="no-decisions">Refreshing market data...</div>';
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = await getCor3Tab();
+        if (!tab) throw new Error('No cor3.gg tab');
         await chrome.tabs.sendMessage(tab.id, { action: "refreshMarket" });
         setTimeout(() => { loadMarket(); refreshAllTimestamps(); }, 3000);
     } catch (e) {
@@ -883,7 +934,8 @@ refreshMarketBtn.addEventListener('click', () => refreshMarketData());
 async function refreshDarkMarketData() {
     darkMarketContainer.innerHTML = '<div class="no-decisions">Refreshing market data...</div>';
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = await getCor3Tab();
+        if (!tab) throw new Error('No cor3.gg tab');
         await chrome.tabs.sendMessage(tab.id, { action: "refreshDarkMarket" });
         setTimeout(() => { loadDarkMarket(); refreshAllTimestamps(); }, 3000);
     } catch (e) {
@@ -1147,15 +1199,14 @@ loadPinnedState();
 
 // --- Auto-Refresh Logic ---
 // Send auto-refresh settings to the content script so it can run even when popup is closed
-function sendAutoRefreshToContent() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: "updateAutoRefresh",
-                autoRefresh: autoRefresh
-            }).catch(() => {});
-        }
-    });
+async function sendAutoRefreshToContent() {
+    const tab = await getCor3Tab();
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, {
+            action: "updateAutoRefresh",
+            autoRefresh: autoRefresh
+        }).catch(() => {});
+    }
 }
 
 // On popup open, sync auto-refresh settings to content script
@@ -1204,7 +1255,8 @@ function triggerAutoRefreshForMarket(which) {
 
 async function doMarketRefreshAction(which) {
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = await getCor3Tab();
+        if (!tab) return;
         if (which === 'home') {
             await chrome.tabs.sendMessage(tab.id, { action: "refreshMarket" });
             setTimeout(() => loadMarket(), 4000);
