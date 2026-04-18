@@ -20,7 +20,7 @@ A Chrome extension that enhances the [cor3.gg](https://cor3.gg) experience by mo
 
 1. **Download** — Clone or download this repository:
    ```
-   git clone https://github.com/YOUR_USERNAME/cor3-helper.git
+   git clone https://github.com/Femtoce11/cor3-helper.git
    ```
    Or click **Code → Download ZIP** and extract it somewhere on your computer.
 
