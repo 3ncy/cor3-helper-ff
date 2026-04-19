@@ -42,9 +42,8 @@ document.addEventListener('click', () => {
 
 const statusDiv = document.getElementById('status');
 
-// --- Pop Out / Side Panel ---
+// --- Pop Out ---
 const popOutBtn = document.getElementById('popOutBtn');
-const sidePanelBtn = document.getElementById('sidePanelBtn');
 
 // Detect if we're running inside a popout window (via ?mode=popout query param)
 (function detectMode() {
@@ -56,7 +55,7 @@ const sidePanelBtn = document.getElementById('sidePanelBtn');
 
 // Helper: find the cor3.gg tab across all windows (needed for pop-out window mode)
 async function getCor3Tab() {
-    // First try the active tab in the current window (works for popup & side panel)
+    // First try the active tab in the current window (works for popup)
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeTab && activeTab.url && (activeTab.url.includes('cor3.gg') || activeTab.url.includes('os.cor3.gg'))) {
         return activeTab;
@@ -75,20 +74,6 @@ if (popOutBtn) {
             height: 700
         });
         window.close();
-    });
-}
-
-if (sidePanelBtn) {
-    sidePanelBtn.addEventListener('click', async () => {
-        try {
-            const tab = await getCor3Tab();
-            if (!tab) { statusDiv.textContent = 'No cor3.gg tab found.'; return; }
-            await chrome.sidePanel.open({ tabId: tab.id });
-            window.close();
-        } catch (e) {
-            // Fallback: if sidePanel API isn't available, notify user
-            statusDiv.textContent = 'Side panel not supported in this browser.';
-        }
     });
 }
 

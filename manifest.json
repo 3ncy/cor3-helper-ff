@@ -6,19 +6,17 @@
   "permissions": [
     "storage",
     "activeTab",
-    "tabs",
-    "sidePanel"
+    "tabs"
   ],
-  "side_panel": {
-    "default_path": "popup.html"
-  },
   "host_permissions": [
     "https://cor3.gg/*",
     "https://os.cor3.gg/*",
     "https://svc-corie.cor3.gg/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
@@ -56,5 +54,15 @@
         "<all_urls>"
       ]
     }
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "cor3-helper@cor3-helper.example.org",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
 }

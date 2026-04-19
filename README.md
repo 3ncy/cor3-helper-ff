@@ -1,6 +1,6 @@
 # COR3 Helper
 
-A Chrome extension that enhances the [cor3.gg](https://cor3.gg) experience by monitoring markets, expeditions, daily ops, and providing timer alerts — all from a compact popup UI.
+A Firefox extension that enhances the [cor3.gg](https://cor3.gg) experience by monitoring markets, expeditions, daily ops, and providing timer alerts — all from a compact popup UI.
 
 ## Features
 
@@ -18,21 +18,42 @@ A Chrome extension that enhances the [cor3.gg](https://cor3.gg) experience by mo
 
 ## Installation
 
-1. **Download** — Clone or download this repository:
+Firefox requires extensions to be signed and verified to use certain features, such as browser storage. This extensions is not yet signed, so you must use either of these Firefox editions, where it is possible to disable the verification enforcement:
+- [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/)
+- [**Firefox Nightly**](https://nightly.mozilla.org/)
+
+For Mozilla's official background on unsigned add-ons, see:
+https://support.mozilla.org/en-US/kb/add-on-signing-in-firefox#w_what-are-my-options-if-i-want-to-use-an-unsigned-add-on-advanced-users
+
+1. **Download the extension source**
+   Click **Code -> Download ZIP** in the top right of this page.
+   
+   Alternatively you can clone the repository:
    ```
-   git clone https://github.com/Femtoce11/cor3-helper.git
+   git clone https://github.com/3ncy/cor3-helper-ff.git
    ```
-   Or click **Code → Download ZIP** and extract it somewhere on your computer.
+   and then zip up all the files found within.
 
-2. **Open Chrome Extensions** — Navigate to `chrome://extensions/` in your browser.
+2. **Open advanced Firefox config**
+   In Firefox (Developer Edition/Nightly), open `about:config`.
 
-3. **Enable Developer Mode** — Toggle the **Developer mode** switch in the top-right corner.
+3. **Disable add-on signature enforcement**
+   Search for `xpinstall.signatures.required` and set it to `false`.
 
-4. **Load the Extension** — Click **Load unpacked** and select the folder containing the extension files (the folder with `manifest.json`).
+   If Firefox warns about changing advanced preferences, accept the warning.
 
-5. **Navigate to cor3.gg** — Open [https://cor3.gg](https://cor3.gg) and log in. The extension will automatically start intercepting game data.
+4. **Open the Add-ons Manager**
+   Go to `about:addons`.
 
-6. **Open the Popup** — Click the COR3 Helper icon in your browser toolbar to view your dashboard.
+5. **Install from file**
+   Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the `.zip` file that you downloaded.
+
+6. **Use the extension**
+   Open [https://cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
+
+## Installation to Chrome and Chromium browsers
+
+See the parent project https://github.com/Femtoce11/cor3-helper.
 
 ## Usage
 
@@ -58,7 +79,7 @@ A Chrome extension that enhances the [cor3.gg](https://cor3.gg) experience by mo
 
 ## Requirements
 
-- Google Chrome (or Chromium-based browser)
+- Firefox Developer Edition or Firefox Nightly
 - An active [cor3.gg](https://cor3.gg) account
 
 ## License
