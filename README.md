@@ -22,33 +22,35 @@ Firefox requires extensions to be signed and verified to use certain features, s
 - [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/)
 - [**Firefox Nightly**](https://nightly.mozilla.org/)
 
-For Mozilla's official background on unsigned add-ons, see:
-https://support.mozilla.org/en-US/kb/add-on-signing-in-firefox#w_what-are-my-options-if-i-want-to-use-an-unsigned-add-on-advanced-users
+For Mozilla's official background on unsigned add-ons, see the article on [support.mozilla.org](https://support.mozilla.org/en-US/kb/add-on-signing-in-firefox#w_what-are-my-options-if-i-want-to-use-an-unsigned-add-on-advanced-users).
 
-1. **Download the extension source**
-   Click **Code -> Download ZIP** in the top right of this page.
-   
+1. **Download the extension source**  
+   Click the green **Code** button in the top right of this page, then **Download ZIP** in the popup.
+
+   Extract that ZIP first, then open the extracted folder (for example `cor3-helper-ff-main`) and select all files inside it (`manifest.json`, `popup.html`, etc.).
+   Create a new ZIP from those files directly, so `manifest.json` is at the root of the ZIP (not inside an extra parent folder).
+
    Alternatively you can clone the repository:
    ```
    git clone https://github.com/3ncy/cor3-helper-ff.git
    ```
-   and then zip up all the files found within.
+   and then zip up the files inside the cloned folder in the same way (with `manifest.json` at the ZIP root).
 
-2. **Open advanced Firefox config**
+2. **Open advanced Firefox config**  
    In Firefox (Developer Edition/Nightly), open `about:config`.
 
-3. **Disable add-on signature enforcement**
+3. **Disable add-on signature enforcement**  
    Search for `xpinstall.signatures.required` and set it to `false`.
 
    If Firefox warns about changing advanced preferences, accept the warning.
 
-4. **Open the Add-ons Manager**
+4. **Open the Add-ons Manager**  
    Go to `about:addons`.
 
-5. **Install from file**
-   Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the `.zip` file that you downloaded.
+5. **Install from file**  
+   Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the ZIP file you created in Step 1.
 
-6. **Use the extension**
+6. **Use the extension**  
    Open [https://cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
 
 ## Installation to Chrome and Chromium browsers
