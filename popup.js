@@ -1329,13 +1329,13 @@ checkUpdateBtn.addEventListener('click', async () => {
     try {
         const localManifest = chrome.runtime.getManifest();
         const localVersion = localManifest.version;
-        const resp = await fetch('https://raw.githubusercontent.com/Femtoce11/cor3-helper/main/manifest.json', { cache: 'no-store' });
+        const resp = await fetch('https://raw.githubusercontent.com/3ncy/cor3-helper-ff/refs/heads/main/manifest.json', { cache: 'no-store' });
         if (!resp.ok) throw new Error('Failed to fetch remote manifest');
         const remoteManifest = await resp.json();
         const remoteVersion = remoteManifest.version;
 
         if (remoteVersion !== localVersion) {
-            updateResult.innerHTML = `Update available! <b>v${localVersion}</b> → <b>v${remoteVersion}</b><br><a href="https://github.com/Femtoce11/cor3-helper" target="_blank" style="color:var(--accent-cyan);">Download from GitHub</a><br><span style="font-size:9px;color:var(--text-muted);">Download ZIP, extract, and reload on chrome://extensions</span>`;
+            updateResult.innerHTML = `Update available! <b>v${localVersion}</b> → <b>v${remoteVersion}</b><br><a href="https://github.com/3ncy/cor3-helper-ff/releases" target="_blank" style="color:var(--accent-cyan);">Open GitHub Releases</a><br><span style="font-size:9px;color:var(--text-muted);">Download the latest .xpi, then install it via about:addons</span>`;
             updateResult.style.color = 'var(--accent-orange)';
         } else {
             updateResult.textContent = `You're up to date! (v${localVersion})`;

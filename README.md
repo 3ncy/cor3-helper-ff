@@ -26,17 +26,10 @@ Firefox requires extensions to be signed and verified to use certain features, s
 
 For Mozilla's official background on unsigned add-ons, see the article on [support.mozilla.org](https://support.mozilla.org/en-US/kb/add-on-signing-in-firefox#w_what-are-my-options-if-i-want-to-use-an-unsigned-add-on-advanced-users).
 
-1. **Download the extension source**  
-   Click the green **Code** button in the top right of this page, then **Download ZIP** in the popup.
+1. **Download the latest release**  
+   Open the [GitHub Releases page](https://github.com/3ncy/cor3-helper-ff/releases) and download the latest `.xpi` file.
 
-   Extract that ZIP first, then open the extracted folder (for example `cor3-helper-ff-main`) and select all files inside it (`manifest.json`, `popup.html`, etc.).
-   Create a new ZIP from those files directly, so `manifest.json` is at the root of the ZIP (not inside an extra parent folder).
-
-   Alternatively you can clone the repository:
-   ```
-   git clone https://github.com/3ncy/cor3-helper-ff.git
-   ```
-   and then zip up the files inside the cloned folder in the same way (with `manifest.json` at the ZIP root).
+   Alternatively you can clone the the repository yourself with `git clone https://github.com/3ncy/cor3-helper-ff.git`, then zip up the files inside the cloned folder so that `manifest.json` is at the root of the ZIP.
 
 2. **Open advanced Firefox config**  
    In Firefox (Developer Edition/Nightly), open `about:config`.
@@ -50,7 +43,7 @@ For Mozilla's official background on unsigned add-ons, see the article on [suppo
    Go to `about:addons`.
 
 5. **Install from file**  
-   Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the ZIP file you created in Step 1.
+   Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the `.xpi` file you downloaded in Step 1.
 
 6. **Use the extension**  
    Open [https://cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
