@@ -266,6 +266,21 @@
         .option-selected {
             border: 1px solid var(--accent-green);
         }
+        .option-row.clickable {
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .option-row.clickable:hover {
+            background: var(--btn-small-hover);
+            border: 1px solid var(--accent-cyan);
+        }
+        .option-score {
+            font-size: 10px;
+            color: var(--accent-purple);
+            font-weight: bold;
+            margin-left: 6px;
+            white-space: nowrap;
+        }
         .no-decisions {
             text-align: center;
             color: var(--text-dim);
@@ -292,6 +307,121 @@
             border-radius: 3px;
             margin-left: 6px;
         }
+        .auto-resolved-tag {
+            display: inline-block;
+            background: var(--text-dim);
+            color: var(--text);
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 6px;
+        }
+        .decision-modifier-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .decision-modifier-row input[type="number"] {
+            width: 42px;
+            padding: 2px 4px;
+            font-size: 10px;
+        }
+        .decision-modifier-row label {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .auto-choose-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            font-size: 10px;
+            color: var(--accent-green);
+            margin-bottom: 6px;
+        }
+        .auto-choose-row input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+            padding: 0;
+        }
+        .warning-banner {
+            background: rgba(255,85,85,0.15);
+            border: 1px solid var(--accent-red);
+            border-radius: 6px;
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: var(--accent-red);
+            text-align: center;
+        }
+        .version-info-section {
+            background: var(--bg-card);
+            border-radius: 6px;
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            border: 1px solid var(--border);
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+        .version-info-section .version-update {
+            color: var(--accent-orange);
+            font-weight: bold;
+        }
+
+        /* Mercenary cards */
+        .merc-card {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .merc-card:hover { border-color: var(--accent-cyan); }
+        .merc-card.selected { border: 2px solid var(--accent-green); }
+        .merc-card img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: contain;
+            background: var(--bg-primary);
+            flex-shrink: 0;
+        }
+        .merc-details { flex: 1; min-width: 0; }
+        .merc-name { font-size: 13px; font-weight: bold; color: var(--accent-cyan); margin-bottom: 2px; }
+        .merc-info { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
+        .merc-status { font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+        .merc-status.available { background: var(--accent-green); color: var(--bg-primary); }
+        .merc-status.resting { background: var(--accent-orange); color: var(--bg-primary); }
+        .merc-status.contracted { background: var(--accent-purple); color: var(--bg-primary); }
+        .merc-rest-timer { font-size: 10px; color: var(--accent-orange); margin-left: 6px; }
+
+        /* Archived expedition cards */
+        .archived-exp-card {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+        }
+        .archived-exp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .archived-exp-merc { font-size: 12px; font-weight: bold; color: var(--accent-cyan); }
+        .outcome-tag { font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 3px; }
+        .outcome-full { background: var(--accent-green); color: var(--bg-primary); }
+        .outcome-partial { background: var(--accent-orange); color: var(--bg-primary); }
+        .outcome-fail { background: var(--accent-red); color: var(--bg-primary); }
+        .archived-exp-info { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
+        .container-items { margin-top: 6px; }
 
         /* Inventory items */
         .space-badge {
@@ -344,10 +474,8 @@
             padding: 2px 5px;
             border-radius: 3px;
         }
-        .badge-sell { background: var(--accent-green); color: var(--bg-primary); }
-        .badge-craft { background: var(--accent-cyan); color: var(--bg-primary); }
+        .badge-craft { background: var(--accent-green); color: var(--bg-primary); }
         .badge-use { background: var(--accent-purple); color: var(--bg-primary); }
-        .badge-delete { background: var(--accent-red); color: var(--bg-primary); }
         .badge-no { background: var(--border); color: var(--text-dim); }
         .tier-common { border-left: 3px solid #a0a0a0; }
         .tier-rare { border-left: 3px solid var(--accent-cyan); }
@@ -435,7 +563,7 @@
             font-style: italic;
         }
 
-        /* Daily Ops Timer */
+        /* Daily Ops */
         .daily-timer-box {
             background: var(--bg-card);
             border-radius: 8px;
@@ -827,6 +955,27 @@
         }
 
         /* Expedition info card */
+        .step-icon { margin-right: 4px; }
+        /* Mercenary cards */
+        .merc-card { background: var(--bg-card); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--border); cursor: pointer; transition: border-color 0.2s; }
+        .merc-card:hover { border-color: var(--accent-cyan); }
+        .merc-card.selected { border-color: var(--accent-green); box-shadow: 0 0 6px rgba(0,255,120,0.2); }
+        .merc-name { font-size: 12px; font-weight: bold; color: var(--accent-cyan); margin-bottom: 2px; }
+        .merc-status { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: bold; }
+        .merc-status.available { background: var(--accent-green); color: var(--bg-primary); }
+        .merc-status.resting { background: var(--accent-orange); color: var(--bg-primary); }
+        .merc-status.contracted { background: var(--accent-cyan); color: var(--bg-primary); }
+        .merc-rest-timer { font-size: 10px; color: var(--accent-orange); margin-left: 6px; }
+        .merc-info { font-size: 10px; color: var(--text-muted); }
+        /* Archived expedition cards */
+        .archived-exp-card { background: var(--bg-card); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--border); }
+        .archived-exp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+        .archived-exp-merc { font-size: 12px; font-weight: bold; color: var(--accent-cyan); }
+        .outcome-tag { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: bold; }
+        .outcome-full { background: var(--accent-green); color: var(--bg-primary); }
+        .outcome-partial { background: var(--accent-orange); color: var(--bg-primary); }
+        .outcome-fail { background: var(--accent-red); color: var(--bg-primary); }
+        .archived-exp-info { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
         .expedition-card {
             background: var(--bg-card);
             border-radius: 8px;
@@ -902,13 +1051,26 @@
                 </label>
             </div>
         </div>
+        <div id="dailyHackInfo" style="display:none;font-size:10px;color:var(--accent-cyan);margin-top:6px;"></div>
+        <!-- Auto Daily Hacking -->
+        <div class="auto-decrypt-row" style="margin-top:8px;">
+            <span class="decrypt-label">&#x1F513; Auto Daily Hacking</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="decrypt-status" id="dailyHackStatus">Off</span>
+                <label class="alarm-toggle-switch">
+                    <input type="checkbox" id="autoDailyHackToggle">
+                    <span class="slider-track"></span>
+                </label>
+            </div>
+        </div>
+        <div id="dailyHackLog" style="display:none;font-size:10px;margin-top:6px;padding:6px 8px;background:var(--bg-card);border-radius:6px;border:1px solid var(--border);color:var(--accent-cyan);"></div>
     </div>
-    <!-- Daily Ops Timer -->
+    <!-- Daily Ops -->
     <div class="section">
         <div class="market-sub-header">
-            <span class="market-sub-label">📅 Daily Ops Timer</span>
+            <span class="market-sub-label">📅 Daily Ops</span>
             <div style="display:flex;gap:4px;">
-                <button id="pinDailyBtn" class="refresh-btn-small pin-btn" title="Pin Daily Ops Timer">📌</button>
+                <button id="pinDailyBtn" class="refresh-btn-small pin-btn" title="Pin Daily Ops">📌</button>
                 <button id="refreshDailyBtn" class="refresh-btn-small" title="Refresh Daily Ops">🔄</button>
             </div>
         </div>
@@ -941,10 +1103,13 @@
         <div id="darkMarketContainer"><div class="no-decisions">No market data cached yet.</div></div>
     </div>
 
-    <!-- Expeditions -->
+    <!-- Expeditions (contains active expeditions, decisions, inventory, mercenaries) -->
     <div class="section">
+        <div class="section-title">🎯 Expeditions</div>
+
+        <!-- Active Expeditions -->
         <div class="market-sub-header">
-            <span class="market-sub-label">🎯 Expeditions</span>
+            <span class="market-sub-label">📍 Active Expedition</span>
             <div style="display:flex;gap:4px;">
                 <button id="refreshExpeditionsBtn" class="refresh-btn-small" title="Refresh Expeditions">🔄</button>
             </div>
@@ -955,21 +1120,99 @@
         <!-- Decisions (expandable) -->
         <div class="expandable-header" id="decisionsSectionToggle">
             <span class="expand-arrow">▶</span>
-            <span class="expand-label">📋 Decisions</span>
+            <span class="expand-label">📋 Decisions <span id="decisionsCount" style="font-size:9px;color:var(--text-dim);"></span></span>
         </div>
+        <div class="last-updated" id="decisionLastUpdated"></div>
         <div class="expandable-body" id="decisionsSectionBody">
+            <!-- Modifier controls -->
+            <div id="modifierDisplay" style="font-size:10px;margin-bottom:6px;">
+                <span style="color:var(--text-muted);">Loot: <strong id="modLootDisplay">3</strong> · Risk: <strong id="modRiskDisplay">-2</strong></span>
+                <span id="modDefaultsNote" style="color:var(--accent-orange);font-size:9px;margin-left:6px;display:none;">(defaults)</span>
+                <button id="editModifiersBtn" class="refresh-btn-small" style="margin-left:8px;font-size:9px;padding:2px 6px;" title="Edit modifiers">✏️</button>
+            </div>
+            <div id="modifierEditRow" style="display:none;font-size:10px;margin-bottom:6px;">
+                <label>Loot × <input type="number" id="lootModifier" min="0" max="9" value="3" style="width:36px;"></label>
+                <label style="margin-left:8px;">Risk × <input type="number" id="riskModifier" min="-9" max="0" value="-2" style="width:36px;"></label>
+                <button id="saveModifiersBtn" class="refresh-btn-small" style="margin-left:8px;font-size:9px;padding:2px 6px;">💾 Save</button>
+                <button id="cancelModifiersBtn" class="refresh-btn-small" style="margin-left:4px;font-size:9px;padding:2px 6px;">Cancel</button>
+            </div>
+            <div class="auto-choose-row">
+                <span style="font-size:10px;">Apply modifiers to scores</span>
+                <label class="alarm-toggle-switch" style="margin-right:6px;">
+                    <input type="checkbox" id="modifiersEnabledToggle" checked>
+                    <span class="slider-track"></span>
+                </label>
+            </div>
+            <div class="auto-choose-row">
+                <span style="font-size:10px;">Auto-choose highest score before deadline</span>
+                <label class="alarm-toggle-switch" style="margin-right:6px;">
+                    <input type="checkbox" id="autoChooseCheckbox">
+                    <span class="slider-track"></span>
+                </label>
+            </div>
             <div id="decisionsContainer"></div>
+        </div>
+
+        <!-- Inventory (expandable) -->
+        <div class="market-sub-header" style="margin-top:8px;">
+            <div class="expandable-header" id="inventorySectionToggle" style="flex:1;">
+                <span class="expand-arrow">▶</span>
+                <span class="expand-label">🎒 Inventory <span id="spaceInfo" class="space-badge" style="font-size:9px;padding:2px 6px;">-- / --</span> <span id="totalValue" style="font-size:10px;color:var(--accent-green);font-weight:normal;"></span></span>
+            </div>
+            <button id="refreshInventoryBtn" class="refresh-btn-small" title="Refresh Inventory">🔄</button>
+        </div>
+        <div class="last-updated" id="inventoryLastUpdated"></div>
+        <div class="expandable-body" id="inventorySectionBody">
+            <div id="inventoryContainer"><div class="no-decisions">Loading inventory...</div></div>
+        </div>
+
+        <!-- Mercenaries (expandable) -->
+        <div class="market-sub-header" style="margin-top:8px;">
+            <div class="expandable-header" id="mercenariesSectionToggle" style="flex:1;">
+                <span class="expand-arrow">▶</span>
+                <span class="expand-label">⚔️ Mercenaries</span>
+            </div>
+            <button id="refreshMercenariesBtn" class="refresh-btn-small" title="Refresh Mercenaries">🔄</button>
+        </div>
+        <div class="last-updated" id="mercenariesLastUpdated"></div>
+        <div class="expandable-body" id="mercenariesSectionBody">
+            <div class="auto-choose-row" style="margin-top:4px;">
+                <span style="font-size:10px;">Auto-send selected mercenary after expedition ends</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label class="alarm-toggle-switch">
+                        <input type="checkbox" id="autoSendMercenaryToggle">
+                        <span class="slider-track"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="auto-choose-row" style="margin-top:2px;">
+                <span style="font-size:10px;">Auto-choose cheapest available mercenary</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label class="alarm-toggle-switch">
+                        <input type="checkbox" id="autoChooseMercToggle">
+                        <span class="slider-track"></span>
+                    </label>
+                </div>
+            </div>
+            <div id="mercenaryConfigRow" style="display:none;font-size:10px;color:var(--text-dim);margin-bottom:6px;">
+                Selected: <span id="selectedMercenaryName" style="color:var(--accent-cyan);font-weight:bold;">None</span>
+            </div>
+            <div id="mercenariesContainer"><div class="no-decisions">Loading mercenaries...</div></div>
         </div>
     </div>
 
-    <!-- Inventory (expandable) -->
+    <!-- Archived Expeditions -->
     <div class="section">
-        <div class="expandable-header" id="inventorySectionToggle">
-            <span class="expand-arrow">▶</span>
-            <span class="expand-label">🎒 Inventory <span id="spaceInfo" class="space-badge" style="font-size:9px;padding:2px 6px;">-- / --</span> <span id="totalValue" style="font-size:10px;color:var(--accent-green);font-weight:normal;"></span></span>
+        <div class="market-sub-header">
+            <div class="expandable-header" id="archivedExpSectionToggle" style="flex:1;">
+                <span class="expand-arrow">▶</span>
+                <span class="expand-label">📦 Archived Expeditions</span>
+            </div>
+            <button id="refreshArchivedBtn" class="refresh-btn-small" title="Refresh Archived">🔄</button>
         </div>
-        <div class="expandable-body" id="inventorySectionBody">
-            <div id="inventoryContainer"><div class="no-decisions">Click to expand and load inventory...</div></div>
+        <div class="last-updated" id="archivedExpLastUpdated"></div>
+        <div class="expandable-body" id="archivedExpSectionBody">
+            <div id="archivedExpContainer"><div class="no-decisions">Loading archived expeditions...</div></div>
         </div>
     </div>
 
@@ -989,7 +1232,7 @@
             <div class="alarm-row">
                 <span>Watch:</span>
                 <select id="alarmTimerSelect">
-                    <option value="daily">Daily Ops Timer</option>
+                    <option value="daily">Daily Ops</option>
                     <option value="home_jobs">Market-1 Jobs Reset</option>
                     <option value="dark_jobs">Market-2 Jobs Reset</option>
                     <optgroup label="Expeditions" id="alarmExpeditionGroup"></optgroup>
@@ -1017,13 +1260,19 @@
         </div>
     </div>
 
-    <div id="status">Status: Ready</div>
+    <!-- Version Info -->
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+        <div id="versionInfoSection" class="version-info-section" style="display:none;"></div>
+        <div id="websiteUpdatedNotice" style="display:none;font-size:10px;color:var(--accent-orange);text-align:center;margin-top:4px;"></div>
+    </div>
 
     <!-- Check for Updates -->
     <div style="margin-top:8px;text-align:center;">
         <button id="checkUpdateBtn" style="width:auto;padding:6px 14px;font-size:11px;">&#x1F504; Check for Updates</button>
         <div id="updateResult" style="font-size:10px;color:var(--text-dim);margin-top:4px;"></div>
     </div>
+
+    <div id="status">Status: Ready</div>
 
 </div><!-- end mainView -->
 
