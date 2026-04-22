@@ -1752,10 +1752,12 @@ async function autoCheckWebsiteUpdated() {
         const { webVersion, systemVersion } = await chrome.storage.local.get(['webVersion', 'systemVersion']);
 
         let updated = false;
-        const localWeb = webVersion ? webVersion.replace(/^v/, '') : null;
-        if (remote.web && localWeb && remote.web !== localWeb) updated = true;
-        const localSys = systemVersion || null;
-        if (remote.system && localSys && remote.system !== localSys) updated = true;
+        const localWeb = webVersion ? String(webVersion).replace(/^v/, '') : null;
+        const remoteWeb = remote.web ? String(remote.web).replace(/^v/, '') : null;
+        if (remoteWeb && localWeb && remoteWeb !== localWeb) updated = true;
+        const localSys = systemVersion ? String(systemVersion).trim() : null;
+        const remoteSys = remote.system ? String(remote.system).trim() : null;
+        if (remoteSys && localSys && remoteSys !== localSys) updated = true;
 
         if (updated) {
             notice.textContent = '⚠️ Website is recently updated';
@@ -2111,14 +2113,16 @@ checkUpdateBtn.addEventListener('click', async () => {
             messages.push(`Extension: <b>v${localExtVersion}</b> → <b>v${remote.extension}</b>`);
         }
         // Compare web version
-        const localWeb = webVersion ? webVersion.replace(/^v/, '') : null;
-        if (remote.web && localWeb && remote.web !== localWeb) {
-            messages.push(`Web: <b>${webVersion}</b> → <b>v${remote.web}</b>`);
+        const localWeb = webVersion ? String(webVersion).replace(/^v/, '') : null;
+        const remoteWeb = remote.web ? String(remote.web).replace(/^v/, '') : null;
+        if (remoteWeb && localWeb && remoteWeb !== localWeb) {
+            messages.push(`Web: <b>${webVersion}</b> → <b>v${remoteWeb}</b>`);
         }
         // Compare system version
-        const localSys = systemVersion || null;
-        if (remote.system && localSys && remote.system !== localSys) {
-            messages.push(`System: <b>${localSys}</b> → <b>${remote.system}</b>`);
+        const localSys = systemVersion ? String(systemVersion).trim() : null;
+        const remoteSys = remote.system ? String(remote.system).trim() : null;
+        if (remoteSys && localSys && remoteSys !== localSys) {
+            messages.push(`System: <b>${localSys}</b> → <b>${remoteSys}</b>`);
         }
 
         if (messages.length > 0) {
@@ -2129,6 +2133,7 @@ checkUpdateBtn.addEventListener('click', async () => {
             updateResult.style.color = 'var(--accent-green)';
         }
     } catch (e) {
+        console.error('[COR3 Helper] Check for updates error:', e);
         updateResult.textContent = 'Could not check for updates. Check your connection.';
         updateResult.style.color = 'var(--accent-red)';
     }
