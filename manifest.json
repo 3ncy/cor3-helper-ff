@@ -16,6 +16,7 @@
   ],
   "background": {
     "scripts": [
+      "errors.js",
       "background.js"
     ]
   },

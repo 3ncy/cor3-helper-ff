@@ -1,8 +1,6 @@
 // background.js
 // Service worker for background tasks (keep-alive, decision monitoring, expedition polling)
 
-importScripts('errors.js');
-
 // --- Helpers ---
 async function getCor3Tab() {
     try {
