@@ -468,6 +468,7 @@ function renderDecisions(decisions) {
     const pending = decisions.filter(d => !d.isResolved);
     if (countEl) countEl.textContent = pending.length > 0 ? `(${pending.length} pending)` : '';
 
+    let baseRisk = decisions[0].riskScore;
     for (const d of decisions) {
         const card = document.createElement('div');
         card.className = 'decision-card';
@@ -503,6 +504,16 @@ function renderDecisions(decisions) {
         if (Array.isArray(d.decisionOptions)) {
             // Find default option (first option is typically the default)
             const defaultOptId = d.decisionOptions.length > 0 ? d.decisionOptions[0].id : null;
+
+            // For resolved decisions, the selected option's risk is already baked into
+            // d.riskScore. Subtract it to recover the base risk at decision time.
+            if (d.isResolved && d.selectedOption) {
+                const selectedOpt = d.decisionOptions.find(o => o.id === d.selectedOption);
+                if (selectedOpt) {
+                    baseRisk -= selectedOpt.riskModifier;
+                }
+            }
+
             for (const opt of d.decisionOptions) {
                 const isSelected = d.selectedOption === opt.id;
                 const isDefault = (d.isAutoResolved && d.selectedOption === opt.id);
@@ -510,7 +521,7 @@ function renderDecisions(decisions) {
                 const clickClass = canClick ? ' clickable' : '';
                 const riskSign = opt.riskModifier > 0 ? '+' : '';
                 const lootSign = opt.lootModifier > 0 ? '+' : '';
-                const score = calcOptionScore(opt, d.riskScore);
+                const score = calcOptionScore(opt, d.isResolved ? baseRisk : d.riskScore);
                 const scoreHtml = `<span class="option-score">Score: ${score >= 0 ? '+' : ''}${score}</span>`;
                 const selectedLabel = isSelected ? (isDefault ? " (⏳Expired⏳)" : ' ✓') : '';
                 optionsHtml += `
@@ -563,7 +574,6 @@ function renderDecisions(decisions) {
 const autoChosenDecisions = new Set();
 var counter = 0;
 async function checkAutoChoose(decisions) {
-    console.log("popup.js - function checkAutoChoose");
     const autoChoose = document.getElementById('autoChooseCheckbox');
     if (!autoChoose || !autoChoose.checked) return;
     if (!decisions || decisions.length === 0) return;
@@ -695,7 +705,6 @@ modifiersEnabledToggle.addEventListener('change', () => {
 });
 
 autoChooseCheckbox.addEventListener('change', () => {
-    console.log("autoChooseCheckbox.checked -> " + autoChooseCheckbox.checked);
     chrome.storage.sync.set({
         decisionModifiers: {
             loot: savedLootMod,
@@ -1306,9 +1315,6 @@ async function refreshMarketData() {
     try {
         const tab = await getCor3Tab();
         if (!tab) throw new Error('No cor3.gg tab');
-        console.log("Market refresh step 1");
-        console.log(tab);
-        console.log(tab.id);
         await chrome.tabs.sendMessage(tab.id, { action: "refreshMarket" });
         setTimeout(() => { loadMarket(); refreshAllTimestamps(); }, 3000);
     } catch (e) {
@@ -1963,7 +1969,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // Version Info ---
-async function displayVersionInfo() {
+async function displayVersionInfo(retryCount) {
+    retryCount = retryCount || 0;
     const versionSection = document.getElementById('versionInfoSection');
     if (!versionSection) return;
     const extVersion = chrome.runtime.getManifest().version;
@@ -1981,9 +1988,11 @@ async function displayVersionInfo() {
                 if (response) {
                     if (!finalWebVersion && response.webVersion) {
                         finalWebVersion = response.webVersion;
+                        chrome.storage.local.set({ webVersion: response.webVersion });
                     }
                     if (!finalSystemVersion && response.systemVersion) {
                         finalSystemVersion = response.systemVersion;
+                        chrome.storage.local.set({ systemVersion: response.systemVersion });
                     }
                 }
             }
@@ -1997,8 +2006,13 @@ async function displayVersionInfo() {
     if (finalSystemVersion) parts.push(`System: ${finalSystemVersion}`);
     versionSection.innerHTML = parts.join(' · ');
     versionSection.style.display = 'block';
+
+    // Retry a few times if versions are missing (data may arrive after popup opens)
+    if ((!finalWebVersion || !finalSystemVersion) && retryCount < 5) {
+        setTimeout(() => displayVersionInfo(retryCount + 1), 2000);
+    }
 }
-displayVersionInfo();
+displayVersionInfo(0);
 
 // Helper function to compare version strings (e.g., "1.17.0" < "1.17.5")
 // Handles suffixes like "v1.17.23-spin" — a suffix (e.g. "-spin") means a higher
@@ -2233,7 +2247,6 @@ if (refreshMercenariesBtn) {
 
 // Load/save auto-send settings
 chrome.storage.sync.get('autoSendMerc', (data) => {
-    console.log("data.autoSendMerc -> " + data.autoSendMerc);
     if (data.autoSendMerc) {
         autoSendMercenaryToggle.checked = !!data.autoSendMerc.enabled;
         if (autoChooseMercToggle) autoChooseMercToggle.checked = !!data.autoSendMerc.autoChooseMerc;
@@ -2247,7 +2260,6 @@ chrome.storage.sync.get('autoSendMerc', (data) => {
 });
 
 function saveAutoSendMercSettings() {
-    console.log("autoChooseMercToggle -> " + autoChooseMercToggle);
     // Read existing settings first to preserve disabledReason
     chrome.storage.sync.get('autoSendMerc', (data) => {
         const existing = data.autoSendMerc || {};
@@ -2505,7 +2517,8 @@ const networkFogStatus = document.getElementById('networkFogStatus');
 function updateNetworkFogStatus() {
     if (!disableNetworkFogToggle || !networkFogStatus) return;
     const isEnabled = disableNetworkFogToggle.checked;
-    networkFogStatus.textContent = isEnabled ? 'On' : 'Off';
+    networkFogStatus.textContent = isEnabled ? 'Active' : 'Off';
+    networkFogStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
 }
 
 // Load saved settings
@@ -2605,14 +2618,16 @@ function updateSystemMessageStatus() {
     if (!disableSystemMessagesToggle || !systemMessageStatus) return;
 
     const isEnabled = disableSystemMessagesToggle.checked;
-    systemMessageStatus.textContent = isEnabled ? 'On' : 'Off';
+    systemMessageStatus.textContent = isEnabled ? 'Active' : 'Off';
+    systemMessageStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
 }
 
 function updateBackgroundStatus() {
     if (!disableBackgroundToggle || !backgroundStatus) return;
 
     const isEnabled = disableBackgroundToggle.checked;
-    backgroundStatus.textContent = isEnabled ? 'On' : 'Off';
+    backgroundStatus.textContent = isEnabled ? 'Active' : 'Off';
+    backgroundStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
 }
 
 // Handle network fog toggle changes
