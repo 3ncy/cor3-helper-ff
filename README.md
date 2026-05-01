@@ -34,27 +34,19 @@ A Firefox extension that enhances the [cor3.gg](https://cor3.gg) experience by m
 1. **Download the latest release**  
    Open the [GitHub Releases page](https://github.com/3ncy/cor3-helper-ff/releases) and download the latest `.xpi` file.
 
-2. **Open advanced Firefox config**  
-   In Firefox (Developer Edition/Nightly), open `about:config`.
+2. **Open the Add-ons Manager**  
+   Navigate to `about:addons`.
 
-3. **Disable add-on signature enforcement**  
-   Search for `xpinstall.signatures.required` and set it to `false`.
-
-   If Firefox warns about changing advanced preferences, accept the warning.
-
-4. **Open the Add-ons Manager**  
-   Go to `about:addons`.
-
-5. **Install from file**  
+3. **Install from file**  
    Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the `.xpi` file you downloaded in Step 1.
 
-6. **Use the extension**  
-   Open [https://cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
+4. **Use the extension**  
+   Open [https://os.cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
 
 ### Alternative approach
 Before the `.xpi` file of the extension for each release has been signed, it is still possible to install the extension via alternative means.
 
-Standard Firefox builds require all extensions to be signed, however it's possible to install unsigned extensions on [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/), [**Firefox Nightly**](https://nightly.mozilla.org/), or off-brand Firefox versions, such as [Waterfox](https://www.waterfox.com/). Once you have one of those browsers, follow the instructions above.
+Standard Firefox builds require all extensions to be signed, however it's possible to install unsigned extensions on [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/), [**Firefox Nightly**](https://nightly.mozilla.org/), or off-brand Firefox versions, such as [Waterfox](https://www.waterfox.com/). Once you have one of those browsers, follow the instructions above. You might need to set `xpinstall.signatures.required` to `false` in `about:config`.
 
 *Alternatively*, you also may temporarily install the unsigned version via the `about:debugging` page in your Firefox browser. There select "This Firefox" -> "Load Temporary Add-on..." and select the `manifest.json` file from the downloaded repository. 
 
