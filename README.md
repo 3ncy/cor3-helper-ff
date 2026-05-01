@@ -29,17 +29,10 @@ A Firefox extension that enhances the [cor3.gg](https://cor3.gg) experience by m
 - **Lightweight** — Only intercepts existing WebSocket traffic and re-triggers some API calls that the game already sends
 
 ## Installation
-
-Firefox requires extensions to be signed and verified to use certain features, such as browser storage. This extensions is not yet signed, so you must use either of these Firefox editions, where it is possible to disable the verification enforcement:
-- [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/)
-- [**Firefox Nightly**](https://nightly.mozilla.org/)
-
-For Mozilla's official background on unsigned add-ons, see the article on [support.mozilla.org](https://support.mozilla.org/en-US/kb/add-on-signing-in-firefox#w_what-are-my-options-if-i-want-to-use-an-unsigned-add-on-advanced-users).
+### Common approach
 
 1. **Download the latest release**  
    Open the [GitHub Releases page](https://github.com/3ncy/cor3-helper-ff/releases) and download the latest `.xpi` file.
-
-   Alternatively you can clone the the repository yourself with `git clone https://github.com/3ncy/cor3-helper-ff.git`, then zip up the files inside the cloned folder so that `manifest.json` is at the root of the ZIP.
 
 2. **Open advanced Firefox config**  
    In Firefox (Developer Edition/Nightly), open `about:config`.
@@ -57,6 +50,13 @@ For Mozilla's official background on unsigned add-ons, see the article on [suppo
 
 6. **Use the extension**  
    Open [https://cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
+
+### Alternative approach
+Before the `.xpi` file of the extension for each release has been signed, it is still possible to install the extension via alternative means.
+
+Standard Firefox builds require all extensions to be signed, however it's possible to install unsigned extensions on [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/), [**Firefox Nightly**](https://nightly.mozilla.org/), or off-brand Firefox versions, such as [Waterfox](https://www.waterfox.com/). Once you have one of those browsers, follow the instructions above.
+
+*Alternatively*, you also may temporarily install the unsigned version via the `about:debugging` page in your Firefox browser. There select "This Firefox" -> "Load Temporary Add-on..." and select the `manifest.json` file from the downloaded repository. 
 
 ## Installation to Chrome and Chromium browsers
 
