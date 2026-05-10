@@ -5,6 +5,38 @@ function isContextValid() {
     try { return !!chrome.runtime.id; } catch (e) { return false; }
 }
 
+// Auto Update Markets toggle: when OFF, only explicit refresh operations update market data in storage
+let _autoUpdateMarkets = true;
+let _marketRefreshInProgress = false;
+let _autoUpdateMarketsLastRefresh = 0;
+let _seqRefreshRunning = false;
+const _AUTO_UPDATE_MARKETS_INTERVAL = 10 * 60 * 1000; // 10 minutes
+try { chrome.storage.sync.get('autoUpdateMarkets', (data) => {
+    if (data.autoUpdateMarkets !== undefined) _autoUpdateMarkets = data.autoUpdateMarkets;
+}); } catch (e) {}
+
+// Periodic market refresh when Auto Update Markets is enabled
+setInterval(() => {
+    if (!_autoUpdateMarkets) return;
+    if (!isContextValid()) return;
+    if (_marketRefreshInProgress || _seqRefreshRunning) return;
+    const now = Date.now();
+    if (now - _autoUpdateMarketsLastRefresh < _AUTO_UPDATE_MARKETS_INTERVAL) return;
+    _autoUpdateMarketsLastRefresh = now;
+    _marketRefreshInProgress = true;
+    console.log('[COR3 Helper] Auto Update Markets: triggering periodic 10-min refresh');
+    window.postMessage({ type: 'COR3_REFRESH_ALL_MARKETS_SEQ' }, '*');
+    // Safety: clear flag after 30s if completion signal not received
+    setTimeout(() => { _marketRefreshInProgress = false; }, 30000);
+    function onDone(evt) {
+        if (evt.data && evt.data.type === 'COR3_ALL_MARKETS_REFRESHED') {
+            window.removeEventListener('message', onDone);
+            _marketRefreshInProgress = false;
+        }
+    }
+    window.addEventListener('message', onDone);
+}, 30000); // check every 30s
+
 // --- Listen for data relayed from content-early.js (MAIN world) ---
 window.addEventListener('message', (event) => {
     if (event.source !== window) return;
@@ -62,14 +94,26 @@ window.addEventListener('message', (event) => {
         });
     }
     if (event.data && event.data.type === 'COR3_WS_MARKET') {
-        chrome.storage.local.set({ marketData: event.data.market, marketDataUpdatedAt: now });
+        if (_autoUpdateMarkets || _marketRefreshInProgress) {
+            chrome.storage.local.set({ marketData: event.data.market, marketDataUpdatedAt: now });
+        }
     }
     if (event.data && event.data.type === 'COR3_WS_DARK_MARKET') {
-        chrome.storage.local.set({ darkMarketData: event.data.market, darkMarketAvailable: true, darkMarketDataUpdatedAt: now });
+        if (_autoUpdateMarkets || _marketRefreshInProgress) {
+            chrome.storage.local.set({ darkMarketData: event.data.market, darkMarketAvailable: true, darkMarketDataUpdatedAt: now });
+        }
+    }
+    if (event.data && event.data.type === 'COR3_WS_SOYUZ_MARKET') {
+        if (_autoUpdateMarkets || _marketRefreshInProgress) {
+            chrome.storage.local.set({ soyuzMarketData: event.data.market, soyuzMarketAvailable: true, soyuzMarketDataUpdatedAt: now });
+        }
     }
     // Handle dark market unreachable — keep cached data, set flag
     if (event.data && event.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE') {
         chrome.storage.local.set({ darkMarketAvailable: false, darkMarketDataUpdatedAt: now });
+    }
+    if (event.data && event.data.type === 'COR3_WS_SOYUZ_MARKET_UNREACHABLE') {
+        chrome.storage.local.set({ soyuzMarketAvailable: false, soyuzMarketDataUpdatedAt: now });
     }
     if (event.data && event.data.type === 'COR3_BEARER_TOKEN') {
         chrome.storage.local.set({ bearerToken: event.data.token });
@@ -80,6 +124,9 @@ window.addEventListener('message', (event) => {
     }
     if (event.data && event.data.type === 'COR3_SYSTEM_VERSION') {
         chrome.storage.local.set({ systemVersion: event.data.version });
+    }
+    if (event.data && event.data.type === 'COR3_PATCH_VERSION') {
+        chrome.storage.local.set({ patchVersion: event.data.version });
     }
     // Store daily rewards data for streak bonus calculation
     if (event.data && event.data.type === 'COR3_DAILY_REWARDS') {
@@ -198,6 +245,39 @@ window.addEventListener('message', (event) => {
                         disabledReason: 'insufficient_credits'
                     }
                 });
+            }
+        });
+        chrome.storage.local.set({
+            expeditionLaunchError: {
+                error: 'Insufficient credits to launch expedition',
+                retryAfter: 0,
+                timestamp: Date.now(),
+                noRetry: true
+            }
+        });
+        autoSendInProgress = false;
+        autoSendExpeditionId = null;
+    }
+    // Handle insufficient credits error during reward container opening (collect.all)
+    if (event.data && event.data.type === 'COR3_WS_COLLECT_INSUFFICIENT_CREDITS') {
+        console.log('[COR3 Helper] Insufficient credits for collect.all, disabling auto-send mercenary');
+        chrome.storage.sync.get('autoSendMerc', (settings) => {
+            if (settings.autoSendMerc) {
+                chrome.storage.sync.set({
+                    autoSendMerc: {
+                        ...settings.autoSendMerc,
+                        enabled: false,
+                        disabledReason: 'insufficient_credits'
+                    }
+                });
+            }
+        });
+        chrome.storage.local.set({
+            expeditionLaunchError: {
+                error: 'Insufficient credits to open reward container. Auto-send disabled.',
+                retryAfter: 0,
+                timestamp: Date.now(),
+                noRetry: true
             }
         });
         autoSendInProgress = false;
@@ -350,6 +430,10 @@ window.addEventListener('message', (event) => {
             dailyHackLog: event.data.message,
             dailyHackLogUpdatedAt: Date.now()
         });
+    }
+    // Auto-disable daily hack toggle after completion or failure
+    if (event.data && event.data.type === 'COR3_DAILY_HACK_DISABLE_TOGGLE') {
+        chrome.storage.sync.set({ autoDailyHackEnabled: false });
     }
     // Auto-fetch daily ops on page load (triggered from content-early.js)
     if (event.data && event.data.type === 'COR3_FETCH_DAILY_OPS') {
@@ -525,6 +609,15 @@ function getTimerRemainingSeconds(timerSource) {
                     resolve(null);
                 }
             });
+        } else if (timerSource === 'soyuz_jobs') {
+            chrome.storage.local.get('soyuzMarketData', (result) => {
+                if (result.soyuzMarketData && result.soyuzMarketData.nextJobsResetAt) {
+                    const diff = new Date(result.soyuzMarketData.nextJobsResetAt).getTime() - Date.now();
+                    resolve(diff > 0 ? Math.floor(diff / 1000) : 0);
+                } else {
+                    resolve(null);
+                }
+            });
         } else if (timerSource.startsWith('exp_')) {
             const expId = timerSource.substring(4);
             chrome.storage.local.get('expeditionsData', (result) => {
@@ -554,7 +647,7 @@ function clearAllIntervals() {
 
 async function checkAlarms() {
     try {
-        if (!isContextValid()) { clearAllIntervals(); return; }
+        if (!isContextValid()) return; // Skip cycle, keep interval alive
         for (const alarm of alarms) {
             if (!alarm.enabled || alarm.thresholdSeconds <= 0) continue;
             const remaining = await getTimerRemainingSeconds(alarm.timerSource);
@@ -572,7 +665,8 @@ async function checkAlarms() {
             }
         }
     } catch (e) {
-        if (e.message && e.message.includes('Extension context invalidated')) clearAllIntervals();
+        // Don't kill intervals on context invalidation — just skip this cycle
+        if (e.message && e.message.includes('Extension context invalidated')) return;
     }
 }
 
@@ -580,19 +674,42 @@ async function checkAlarms() {
 alarmsIntervalId = setInterval(() => checkAlarms(), 1000);
 
 // --- Auto-Refresh for Market Job Timers ---
-let autoRefreshSettings = { home_jobs: false, dark_jobs: false };
-let autoRefreshRetryPending = { home_jobs: false, dark_jobs: false };
+let autoRefreshSettings = { home_jobs: false, dark_jobs: false, soyuz_jobs: false };
+let autoRefreshRetryPending = { home_jobs: false, dark_jobs: false, soyuz_jobs: false };
+let autoRefreshExpiredRetryAt = { home_jobs: 0, dark_jobs: 0, soyuz_jobs: 0 }; // timestamp when next expired retry is allowed
 
 // Load auto-refresh settings on startup
 try { chrome.storage.sync.get('autoRefresh', (data) => {
     if (data.autoRefresh) autoRefreshSettings = data.autoRefresh;
 }); } catch (e) {}
 
+// Keep auto-refresh settings in sync when changed from popup (even if popup doesn't send updateAutoRefresh)
+try { chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.autoRefresh && changes.autoRefresh.newValue) {
+        autoRefreshSettings = changes.autoRefresh.newValue;
+    }
+    if (area === 'sync' && changes.autoUpdateMarkets !== undefined) {
+        _autoUpdateMarkets = changes.autoUpdateMarkets.newValue !== false;
+    }
+    // Clear expired retry cooldown when market data arrives with a future nextJobsResetAt
+    if (area === 'local') {
+        const marketKeyMap = { marketData: 'home_jobs', darkMarketData: 'dark_jobs', soyuzMarketData: 'soyuz_jobs' };
+        for (const [storageKey, refreshKey] of Object.entries(marketKeyMap)) {
+            if (changes[storageKey] && changes[storageKey].newValue) {
+                const resetAt = changes[storageKey].newValue.nextJobsResetAt;
+                if (resetAt && new Date(resetAt).getTime() > Date.now()) {
+                    autoRefreshExpiredRetryAt[refreshKey] = 0; // timer updated — clear cooldown
+                }
+            }
+        }
+    }
+}); } catch (e) {}
+
 function getMarketTimerSeconds(which) {
     return new Promise((resolve) => {
         if (!isContextValid()) { resolve(null); return; }
         try {
-            const key = which === 'home_jobs' ? 'marketData' : 'darkMarketData';
+            const key = which === 'home_jobs' ? 'marketData' : which === 'soyuz_jobs' ? 'soyuzMarketData' : 'darkMarketData';
             chrome.storage.local.get(key, (result) => {
                 const data = result[key];
                 if (data && data.nextJobsResetAt) {
@@ -606,38 +723,75 @@ function getMarketTimerSeconds(which) {
     });
 }
 
-function doAutoRefreshMarket(which) {
-    if (which === 'home_jobs') {
-        window.postMessage({ type: 'COR3_REFRESH_MARKET' }, '*');
-    } else {
-        window.postMessage({ type: 'COR3_REFRESH_DARK_MARKET' }, '*');
-    }
-}
-
 async function checkAutoRefresh() {
     try {
-        if (!isContextValid()) { clearAllIntervals(); return; }
-        for (const key of ['home_jobs', 'dark_jobs']) {
+        // When context is invalid, we can't read storage but auto-refresh uses
+        // window.postMessage which still works. Skip storage-dependent timer checks
+        // but keep the interval alive so it resumes if context is restored (page reload).
+        if (!isContextValid()) return;
+        if (_seqRefreshRunning) return; // sequential refresh already in progress
+
+        // Check if ANY enabled market timer hit 0 (with 60s retry cooldown for expired timers)
+        let needsRefresh = false;
+        let expiredMarkets = [];
+        const now = Date.now();
+        for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs']) {
             if (!autoRefreshSettings[key]) continue;
             if (autoRefreshRetryPending[key]) continue;
 
             const sec = await getMarketTimerSeconds(key);
             if (sec !== null && sec <= 0) {
-                autoRefreshRetryPending[key] = true;
-                doAutoRefreshMarket(key);
-
-                // After 10s, re-check. If still 0, retry.
-                setTimeout(async () => {
-                    autoRefreshRetryPending[key] = false;
-                    const newSec = await getMarketTimerSeconds(key);
-                    if (newSec !== null && newSec <= 0) {
-                        // Will be picked up by next checkAutoRefresh cycle
-                    }
-                }, 10000);
+                // If timer is expired, only retry if 60s cooldown has passed
+                if (autoRefreshExpiredRetryAt[key] && now < autoRefreshExpiredRetryAt[key]) continue;
+                needsRefresh = true;
+                expiredMarkets.push(key);
             }
         }
+
+        if (needsRefresh) {
+            _seqRefreshRunning = true;
+            // Mark expired markets as pending and set 60s retry cooldown
+            for (const key of expiredMarkets) {
+                autoRefreshRetryPending[key] = true;
+                autoRefreshExpiredRetryAt[key] = now + 60000; // retry again in 60s if still expired
+            }
+
+            // Build order: only include expired markets, priority: soyuz → dark → home
+            var order = [];
+            if (expiredMarkets.includes('soyuz_jobs')) order.push('soyuz');
+            if (expiredMarkets.includes('dark_jobs')) order.push('dark');
+            if (expiredMarkets.includes('home_jobs')) order.push('home');
+
+            // Trigger sequential refresh (one market at a time)
+            _marketRefreshInProgress = true;
+            _autoUpdateMarketsLastRefresh = Date.now();
+            var msg = { type: 'COR3_REFRESH_ALL_MARKETS_SEQ' };
+            if (order.length > 0) msg.order = order;
+            window.postMessage(msg, '*');
+
+            // After 30s max, clear the pending flags so next cycle can retry if needed
+            setTimeout(() => {
+                _seqRefreshRunning = false;
+                for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs']) {
+                    autoRefreshRetryPending[key] = false;
+                }
+            }, 30000);
+
+            // Listen for completion signal to clear flags early
+            function onAllDone(evt) {
+                if (evt.data && evt.data.type === 'COR3_ALL_MARKETS_REFRESHED') {
+                    window.removeEventListener('message', onAllDone);
+                    _seqRefreshRunning = false;
+                    for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs']) {
+                        autoRefreshRetryPending[key] = false;
+                    }
+                }
+            }
+            window.addEventListener('message', onAllDone);
+        }
     } catch (e) {
-        if (e.message && e.message.includes('Extension context invalidated')) clearAllIntervals();
+        // Don't kill intervals on context invalidation — just skip this cycle
+        if (e.message && e.message.includes('Extension context invalidated')) return;
     }
 }
 
@@ -687,10 +841,57 @@ function stopDailyHackSolver() {
     dailyHackInjected = false;
 }
 
-// Auto-start solver if it was enabled before page load
-chrome.storage.sync.get('autoDecryptEnabled', (data) => {
+// --- Auto ICE Wall Solver ---
+let iceWallSolverInjected = false;
+
+function injectIceWallSolver() {
+    if (iceWallSolverInjected) {
+        // Solver already injected, just signal restart
+        window.postMessage({ type: 'COR3_START_ICE_WALL_SOLVER' }, '*');
+        return;
+    }
+    iceWallSolverInjected = true;
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('ice-wall-solver.js');
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
+}
+
+function stopIceWallSolver() {
+    window.postMessage({ type: 'COR3_STOP_ICE_WALL_SOLVER' }, '*');
+    iceWallSolverInjected = false;
+}
+
+// --- Auto Simple Decrypt Solver ---
+let simpleDecryptSolverInjected = false;
+
+function injectSimpleDecryptSolver() {
+    if (simpleDecryptSolverInjected) {
+        window.postMessage({ type: 'COR3_START_SIMPLE_DECRYPT_SOLVER' }, '*');
+        return;
+    }
+    simpleDecryptSolverInjected = true;
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('simple-decrypt-solver.js');
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
+}
+
+function stopSimpleDecryptSolver() {
+    window.postMessage({ type: 'COR3_STOP_SIMPLE_DECRYPT_SOLVER' }, '*');
+    simpleDecryptSolverInjected = false;
+}
+
+// Auto-start solvers if they were enabled before page load
+chrome.storage.sync.get(['autoDecryptEnabled', 'autoIceWallEnabled', 'autoSimpleDecryptEnabled'], (data) => {
     if (data.autoDecryptEnabled) {
         injectDecryptSolver();
+    }
+    if (data.autoIceWallEnabled) {
+        injectIceWallSolver();
+    }
+    if (data.autoSimpleDecryptEnabled) {
+        injectSimpleDecryptSolver();
     }
 });
 
@@ -721,13 +922,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         window.postMessage({ type: 'COR3_REQUEST_MARKET' }, '*');
         sendResponse({ success: true });
     } else if (request.action === "refreshMarket") {
+        _marketRefreshInProgress = true;
+        _autoUpdateMarketsLastRefresh = Date.now();
+        setTimeout(() => { _marketRefreshInProgress = false; }, 10000);
         window.postMessage({ type: 'COR3_REFRESH_MARKET' }, '*');
         sendResponse({ success: true });
     } else if (request.action === "requestDarkMarket") {
         window.postMessage({ type: 'COR3_REQUEST_DARK_MARKET' }, '*');
         sendResponse({ success: true });
     } else if (request.action === "refreshDarkMarket") {
+        _marketRefreshInProgress = true;
+        _autoUpdateMarketsLastRefresh = Date.now();
+        setTimeout(() => { _marketRefreshInProgress = false; }, 10000);
         window.postMessage({ type: 'COR3_REFRESH_DARK_MARKET' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "requestSoyuzMarket") {
+        window.postMessage({ type: 'COR3_REQUEST_SOYUZ_MARKET' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "refreshSoyuzMarket") {
+        _marketRefreshInProgress = true;
+        _autoUpdateMarketsLastRefresh = Date.now();
+        setTimeout(() => { _marketRefreshInProgress = false; }, 10000);
+        window.postMessage({ type: 'COR3_REFRESH_SOYUZ_MARKET' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "refreshAllMarketsSeq") {
+        _marketRefreshInProgress = true;
+        _autoUpdateMarketsLastRefresh = Date.now();
+        var msg = { type: 'COR3_REFRESH_ALL_MARKETS_SEQ' };
+        if (request.skipLots) msg.skipLots = true;
+        if (request.order) msg.order = request.order;
+        window.postMessage(msg, '*');
         sendResponse({ success: true });
     } else if (request.action === "leaveStash") {
         window.postMessage({ type: 'COR3_LEAVE_STASH' }, '*');
@@ -748,6 +972,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             injectDecryptSolver();
         } else {
             stopDecryptSolver();
+        }
+        sendResponse({ success: true });
+    } else if (request.action === "toggleIceWallSolver") {
+        if (request.enabled) {
+            injectIceWallSolver();
+        } else {
+            stopIceWallSolver();
+        }
+        sendResponse({ success: true });
+    } else if (request.action === "toggleSimpleDecryptSolver") {
+        if (request.enabled) {
+            injectSimpleDecryptSolver();
+        } else {
+            stopSimpleDecryptSolver();
         }
         sendResponse({ success: true });
     } else if (request.action === "toggleDailyHackSolver") {
@@ -853,12 +1091,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         showNetworkFogVideos();
         console.log('[COR3 Helper] Network fog re-enabled');
         sendResponse({ success: true });
+    } else if (request.action === "moveNotificationsLeft") {
+        chrome.storage.sync.set({ moveNotificationsLeft: true });
+        applyNotificationsLeft();
+        console.log('[COR3 Helper] Notifications moved to left');
+        sendResponse({ success: true });
+    } else if (request.action === "moveNotificationsRight") {
+        chrome.storage.sync.set({ moveNotificationsLeft: false });
+        removeNotificationsLeft();
+        console.log('[COR3 Helper] Notifications moved back to right');
+        sendResponse({ success: true });
     } else if (request.action === "getVersionFallbacks") {
         // Return version fallbacks from global variables
         sendResponse({
             webVersion: window.__cor3WebVersion,
-            systemVersion: window.__cor3SystemVersion
+            systemVersion: window.__cor3SystemVersion,
+            patchVersion: window.__cor3PatchVersion
         });
+    } else if (request.action === "startAutoJobs") {
+        // Start auto job solver — inject engine script and pass job queue
+        injectAutoJobSolver();
+        setTimeout(() => {
+            window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: request.jobs }, '*');
+        }, 500);
+        sendResponse({ success: true });
+    } else if (request.action === "stopAutoJobs") {
+        window.postMessage({ type: 'COR3_AUTOJOB_STOP' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "autoClearIpsCmd") {
+        // Relay auto-clear-ips WS commands to MAIN world
+        window.postMessage({ type: 'COR3_AUTOJOB_CMD', cmd: request.cmd, data: request.data || {} }, '*');
+        sendResponse({ success: true });
     }
 });
 
@@ -1061,5 +1324,208 @@ chrome.storage.sync.get('disableNetworkFog', (result) => {
             hideNetworkFogVideos();
             startNetworkFogObserver();
         }, 1000);
+    }
+});
+
+// --- Move Notifications to Left ---
+const COR3_NOTIF_LEFT_STYLE_ID = 'cor3-notifications-left-style';
+
+function applyNotificationsLeft() {
+    if (document.getElementById(COR3_NOTIF_LEFT_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = COR3_NOTIF_LEFT_STYLE_ID;
+    style.textContent = `
+        .Toastify__toast-container--bottom-right {
+            left: 16px !important;
+            right: auto !important;
+            margin-bottom: 35px;
+        }
+        [data-component-name="NotificationsHistory"] {
+            left: 0 !important;
+            right: auto !important;
+            align-items: flex-start;
+        }
+        [data-component-name="NotificationsHistory"] > button:first-of-type {
+            transform: scaleX(-1);
+            display: flex;
+        }
+        [data-component-name="NotificationsHistory"] .sticker-content {
+            color: transparent;               /* hide original text */
+            position: relative;
+        }
+        [data-component-name="NotificationsHistory"] .sticker-content::before {
+            content: "Notifications";         /* duplicate the word */
+            position: absolute;
+            left: 0;
+            transform: scaleX(-1);
+            color: #FFFFFF;   /* re‑apply the original colour */
+            white-space: pre;                 /* keep spacing */
+        }
+        [data-component-name="NotificationsHistory"] .go3673730358,
+        [data-component-name="NotificationsHistory"] > div:last-child {
+            border-top-left-radius: 0px;
+            border-top-right-radius: 16px;
+        }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+}
+
+function removeNotificationsLeft() {
+    const el = document.getElementById(COR3_NOTIF_LEFT_STYLE_ID);
+    if (el) el.remove();
+}
+
+// Apply notifications left on page load if setting is enabled
+chrome.storage.sync.get('moveNotificationsLeft', (result) => {
+    if (result.moveNotificationsLeft) {
+        setTimeout(() => {
+            applyNotificationsLeft();
+        }, 1000);
+    }
+});
+
+// --- Auto Job Solver Engine Injection ---
+let autoJobSolverInjected = false;
+
+function injectAutoJobSolver() {
+    if (autoJobSolverInjected) return;
+    autoJobSolverInjected = true;
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('auto-job-solver.js');
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
+    console.log('[COR3 Helper] Auto Job Solver engine injected');
+}
+
+// Listen for auto-job log/tracker updates from the engine (MAIN world -> content script -> storage)
+window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    if (!isContextValid()) return;
+
+    if (event.data && event.data.type === 'COR3_AUTOJOB_ENABLE_DECRYPT_SOLVER') {
+        // Auto-enable the decrypt solver when auto-job needs it
+        chrome.storage.sync.get('autoDecryptEnabled', (result) => {
+            if (!result.autoDecryptEnabled) {
+                chrome.storage.sync.set({ autoDecryptEnabled: true });
+                console.log('[COR3 Helper] Auto Job: Enabling decrypt solver for minigame');
+            }
+            injectDecryptSolver();
+        });
+    }
+    if (event.data && event.data.type === 'COR3_ICE_WALL_STATUS') {
+        chrome.storage.local.set({
+            iceWallSolverStatus: {
+                message: event.data.message,
+                level: event.data.level || 'info',
+                timestamp: Date.now()
+            }
+        });
+    }
+    if (event.data && event.data.type === 'COR3_SIMPLE_DECRYPT_STATUS') {
+        chrome.storage.local.set({
+            simpleDecryptSolverStatus: {
+                message: event.data.message,
+                level: event.data.level || 'info',
+                timestamp: Date.now()
+            }
+        });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_ENABLE_SIMPLE_DECRYPT_SOLVER') {
+        chrome.storage.sync.get('autoSimpleDecryptEnabled', (result) => {
+            if (!result.autoSimpleDecryptEnabled) {
+                chrome.storage.sync.set({ autoSimpleDecryptEnabled: true });
+                console.log('[COR3 Helper] Auto Job: Enabling Simple Decrypt solver for minigame');
+            }
+            injectSimpleDecryptSolver();
+        });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_ENABLE_ICE_WALL_SOLVER') {
+        // Auto-enable the ICE Wall solver when auto-job needs it
+        chrome.storage.sync.get('autoIceWallEnabled', (result) => {
+            if (!result.autoIceWallEnabled) {
+                chrome.storage.sync.set({ autoIceWallEnabled: true });
+                console.log('[COR3 Helper] Auto Job: Enabling ICE Wall solver for minigame');
+            }
+            injectIceWallSolver();
+        });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_LOG') {
+        // Append directly to persisted debug logs array (works even when popup is closed)
+        const logMsg = event.data.msg;
+        const logLevel = event.data.level || 'info';
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        chrome.storage.local.get('autoJobsDebugLogs', (result) => {
+            if (!isContextValid()) return;
+            const logs = Array.isArray(result.autoJobsDebugLogs) ? result.autoJobsDebugLogs : [];
+            logs.push({ time: timeStr, msg: logMsg, level: logLevel });
+            if (logs.length > 200) logs.splice(0, logs.length - 200);
+            chrome.storage.local.set({ autoJobsDebugLogs: logs });
+        });
+    }
+    if (event.data && event.data.type === 'COR3_WS_NETWORK_MAP') {
+        chrome.storage.local.set({ serverMaintenanceMap: event.data.servers });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_TRACKER_UPDATE') {
+        chrome.storage.local.set({ autoJobsTracker: event.data.tracker });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_DONE') {
+        chrome.storage.local.set({ autoJobsRunning: false });
+    }
+    if (event.data && event.data.type === 'COR3_ALL_MARKETS_REFRESHED') {
+        _marketRefreshInProgress = false;
+        // Signal background.js that sequential refresh is complete
+        chrome.storage.local.set({ _allMarketsRefreshed: Date.now() });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAVE_COMPLETED') {
+        // Merge completed job results into storage (accumulate across runs within same reset cycle)
+        chrome.storage.local.get('autoJobsCompletedResults', (result) => {
+            const existing = result.autoJobsCompletedResults || [];
+            const incoming = event.data.jobs || [];
+            // Merge: replace existing entries by jobId, append new ones
+            const merged = [...existing];
+            for (const job of incoming) {
+                const idx = merged.findIndex(j => j.jobId === job.jobId);
+                if (idx >= 0) merged[idx] = job;
+                else merged.push(job);
+            }
+            chrome.storage.local.set({ autoJobsCompletedResults: merged });
+        });
+    }
+    // --- Auto Clear IPs: relay WS responses to storage for background.js ---
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAI_TRANSIT') {
+        chrome.storage.local.set({ _clearIpsTransit: { data: event.data.data, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAI_TRANSIT_REMOVE') {
+        chrome.storage.local.set({ _clearIpsTransitRemove: { data: event.data.data, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_WS_ENDPOINT_RESULT') {
+        chrome.storage.local.set({ _clearIpsEndpoint: { success: event.data.success, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE') {
+        chrome.storage.local.set({ _clearIpsEndpoint: { success: false, unreachable: true, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAI_LOGIN_STATUS') {
+        chrome.storage.local.set({ _clearIpsLoginStatus: { data: event.data.data, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAI_LOGIN_RESULT') {
+        chrome.storage.local.set({ _clearIpsLoginResult: { data: event.data.data, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAI_HACK_START') {
+        chrome.storage.local.set({ _clearIpsHackStart: { data: event.data.data, error: event.data.error, ts: Date.now() } });
+    }
+    if (event.data && event.data.type === 'COR3_AUTOJOB_SAI_UPDATE') {
+        chrome.storage.local.set({ _clearIpsSaiUpdate: { data: event.data.data, ts: Date.now() } });
+    }
+});
+
+// Resume auto-jobs if they were running before page reload
+chrome.storage.local.get(['autoJobsRunning', 'autoJobsQueue'], (data) => {
+    if (data.autoJobsRunning && data.autoJobsQueue && data.autoJobsQueue.length > 0) {
+        console.log('[COR3 Helper] Resuming auto jobs after page reload');
+        injectAutoJobSolver();
+        setTimeout(() => {
+            window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: data.autoJobsQueue }, '*');
+        }, 5000); // longer delay on page reload
     }
 });

@@ -99,7 +99,8 @@ let editingAlarmId = null; // null = new, string = editing existing
 const TIMER_LABELS = {
     daily: 'Daily Ops',
     home_jobs: 'Market-1 Jobs Reset',
-    dark_jobs: 'Market-2 Jobs Reset'
+    dark_jobs: 'Market-2 Jobs Reset',
+    soyuz_jobs: 'Market-3 Jobs Reset'
 };
 
 // Dynamically populate expedition options in alarm timer select
@@ -294,6 +295,7 @@ const refreshExpeditionsBtn = document.getElementById('refreshExpeditionsBtn');
 const dailyLastUpdated = document.getElementById('dailyLastUpdated');
 const coreMarketLastUpdated = document.getElementById('coreMarketLastUpdated');
 const darkMarketLastUpdated = document.getElementById('darkMarketLastUpdated');
+const soyuzMarketLastUpdated = document.getElementById('soyuzMarketLastUpdated');
 const expeditionLastUpdated = document.getElementById('expeditionLastUpdated');
 const decisionLastUpdated = document.getElementById('decisionLastUpdated');
 const inventoryLastUpdated = document.getElementById('inventoryLastUpdated');
@@ -323,6 +325,7 @@ function refreshAllTimestamps() {
     showLastUpdated(dailyLastUpdated, 'dailyOpsUpdatedAt');
     showLastUpdated(coreMarketLastUpdated, 'marketDataUpdatedAt');
     showLastUpdated(darkMarketLastUpdated, 'darkMarketDataUpdatedAt');
+    showLastUpdated(soyuzMarketLastUpdated, 'soyuzMarketDataUpdatedAt');
     showLastUpdated(expeditionLastUpdated, 'expeditionsDataUpdatedAt');
     showLastUpdated(decisionLastUpdated, 'expeditionsDataUpdatedAt');
     if (inventoryLastUpdated) showLastUpdated(inventoryLastUpdated, 'stashDataUpdatedAt');
@@ -352,22 +355,35 @@ function renderExpeditionInfo(expeditions) {
         if (result.expeditionLaunchError) {
             const error = result.expeditionLaunchError;
             const now = Date.now();
-            const retryAfter = error.retryAfter || 120000;
-            const timeUntilRetry = Math.max(0, retryAfter - (now - error.timestamp));
 
-            if (timeUntilRetry > 0) {
-                const retryMinutes = Math.ceil(timeUntilRetry / 60000);
+            if (error.noRetry) {
+                // Permanent error — no retry, user must re-enable
                 const errorHtml = `
-                    <div class="warning-banner" style="background:rgba(255,165,0,0.15);border-color:var(--accent-orange);color:var(--accent-orange);">
-                        <div style="font-weight:bold;margin-bottom:4px;">⚠️ Expedition Launch Failed</div>
+                    <div class="warning-banner" style="background:rgba(255,80,80,0.15);border-color:var(--accent-red);color:var(--accent-red);">
+                        <div style="font-weight:bold;margin-bottom:4px;">❌ Expedition Error</div>
                         <div style="font-size:10px;">${error.error}</div>
-                        <div style="font-size:10px;margin-top:4px;">Retrying in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}...</div>
+                        <div style="font-size:10px;margin-top:4px;">Re-enable auto-send mercenary to retry.</div>
                     </div>
                 `;
                 expeditionInfoContainer.innerHTML = errorHtml;
             } else {
-                // Clear expired error
-                chrome.storage.local.remove('expeditionLaunchError');
+                const retryAfter = error.retryAfter || 120000;
+                const timeUntilRetry = Math.max(0, retryAfter - (now - error.timestamp));
+
+                if (timeUntilRetry > 0) {
+                    const retryMinutes = Math.ceil(timeUntilRetry / 60000);
+                    const errorHtml = `
+                        <div class="warning-banner" style="background:rgba(255,165,0,0.15);border-color:var(--accent-orange);color:var(--accent-orange);">
+                            <div style="font-weight:bold;margin-bottom:4px;">⚠️ Expedition Launch Failed</div>
+                            <div style="font-size:10px;">${error.error}</div>
+                            <div style="font-size:10px;margin-top:4px;">Retrying in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}...</div>
+                        </div>
+                    `;
+                    expeditionInfoContainer.innerHTML = errorHtml;
+                } else {
+                    // Clear expired error
+                    chrome.storage.local.remove('expeditionLaunchError');
+                }
             }
         }
     });
@@ -498,8 +514,7 @@ function renderDecisions(decisions) {
             }
         }
 
-        const autoChooseOn = autoChooseCheckbox && autoChooseCheckbox.checked;
-        const canClick = !d.isResolved && !isExpired && !autoChooseOn;
+        const canClick = !d.isResolved && !isExpired;
         let optionsHtml = '';
         if (Array.isArray(d.decisionOptions)) {
             // Find default option (first option is typically the default)
@@ -545,13 +560,37 @@ function renderDecisions(decisions) {
         decisionsContainer.appendChild(card);
     }
 
-    // Wire up clickable option rows
+    // Wire up clickable option rows with two-click confirm pattern
+    let activeConfirmEl = null;
+    let confirmTimeout = null;
     decisionsContainer.querySelectorAll('.option-row.clickable').forEach(el => {
         el.addEventListener('click', async () => {
             const optId = el.dataset.optId;
             const expId = el.dataset.expId;
             const msgId = el.dataset.msgId;
             if (!optId || !expId || !msgId) return;
+
+            // First click: show confirm state
+            if (!el.classList.contains('confirming')) {
+                // Clear any other active confirm
+                if (activeConfirmEl && activeConfirmEl !== el) {
+                    activeConfirmEl.classList.remove('confirming');
+                }
+                if (confirmTimeout) clearTimeout(confirmTimeout);
+                el.classList.add('confirming');
+                activeConfirmEl = el;
+                // Auto-reset after 3 seconds
+                confirmTimeout = setTimeout(() => {
+                    el.classList.remove('confirming');
+                    activeConfirmEl = null;
+                }, 3000);
+                return;
+            }
+
+            // Second click: execute
+            if (confirmTimeout) clearTimeout(confirmTimeout);
+            el.classList.remove('confirming');
+            activeConfirmEl = null;
             el.style.opacity = '0.5';
             try {
                 const tab = await getCor3Tab();
@@ -585,7 +624,9 @@ async function checkAutoChoose(decisions) {
         const remaining = dl - Date.now();
         chrome.storage.local.set({ popupConsoleLog: "remaining time for decision -> " + remaining + " Counter: " + counter });
         if (remaining <= 0) continue; // expired
-        if (remaining > 60000) continue; // wait until < 1 minute remaining
+        const noWaitCb = document.getElementById('noWaitAutoChooseCheckbox');
+        const noWait = noWaitCb && noWaitCb.checked;
+        if (!noWait && remaining > 60000) continue; // wait until < 1 minute remaining
 
         // Pick highest score
         let bestOpt = null;
@@ -649,6 +690,8 @@ async function loadExpeditions() {
 const lootModInput = document.getElementById('lootModifier');
 const riskModInput = document.getElementById('riskModifier');
 const autoChooseCheckbox = document.getElementById('autoChooseCheckbox');
+const noWaitAutoChooseCheckbox = document.getElementById('noWaitAutoChooseCheckbox');
+const noWaitRow = document.getElementById('noWaitRow');
 const editModifiersBtn = document.getElementById('editModifiersBtn');
 const saveModifiersBtn = document.getElementById('saveModifiersBtn');
 const cancelModifiersBtn = document.getElementById('cancelModifiersBtn');
@@ -680,7 +723,8 @@ saveModifiersBtn.addEventListener('click', () => {
             loot: savedLootMod,
             risk: savedRiskMod,
             enabled: modifiersEnabled,
-            autoChoose: autoChooseCheckbox.checked
+            autoChoose: autoChooseCheckbox.checked,
+            noWaitAutoChoose: noWaitAutoChooseCheckbox ? noWaitAutoChooseCheckbox.checked : false
         }
     });
     reRenderDecisions();
@@ -698,19 +742,23 @@ modifiersEnabledToggle.addEventListener('change', () => {
             loot: savedLootMod,
             risk: savedRiskMod,
             enabled: modifiersEnabled,
-            autoChoose: autoChooseCheckbox.checked
+            autoChoose: autoChooseCheckbox.checked,
+            noWaitAutoChoose: noWaitAutoChooseCheckbox ? noWaitAutoChooseCheckbox.checked : false
         }
     });
     reRenderDecisions();
 });
 
 autoChooseCheckbox.addEventListener('change', () => {
+    // Show/hide noWait row
+    if (noWaitRow) noWaitRow.style.display = autoChooseCheckbox.checked ? '' : 'none';
     chrome.storage.sync.set({
         decisionModifiers: {
             loot: savedLootMod,
             risk: savedRiskMod,
             enabled: modifiersEnabled,
-            autoChoose: autoChooseCheckbox.checked
+            autoChoose: autoChooseCheckbox.checked,
+            noWaitAutoChoose: noWaitAutoChooseCheckbox ? noWaitAutoChooseCheckbox.checked : false
         }
     });
     // Re-render decisions to update clickability and run auto-choose
@@ -722,6 +770,26 @@ autoChooseCheckbox.addEventListener('change', () => {
     }
 });
 
+if (noWaitAutoChooseCheckbox) {
+    noWaitAutoChooseCheckbox.addEventListener('change', () => {
+        chrome.storage.sync.set({
+            decisionModifiers: {
+                loot: savedLootMod,
+                risk: savedRiskMod,
+                enabled: modifiersEnabled,
+                autoChoose: autoChooseCheckbox.checked,
+                noWaitAutoChoose: noWaitAutoChooseCheckbox.checked
+            }
+        });
+        // Re-run auto-choose immediately if enabled
+        if (autoChooseCheckbox.checked && noWaitAutoChooseCheckbox.checked) {
+            chrome.storage.local.get('expeditionDecisions', (result) => {
+                checkAutoChoose(result.expeditionDecisions || []);
+            });
+        }
+    });
+}
+
 // Load saved modifier settings
 chrome.storage.sync.get('decisionModifiers', (data) => {
     if (data.decisionModifiers) {
@@ -729,6 +797,8 @@ chrome.storage.sync.get('decisionModifiers', (data) => {
         savedRiskMod = data.decisionModifiers.risk ?? -2;
         modifiersEnabled = data.decisionModifiers.enabled !== false;
         autoChooseCheckbox.checked = !!data.decisionModifiers.autoChoose;
+        if (noWaitAutoChooseCheckbox) noWaitAutoChooseCheckbox.checked = !!data.decisionModifiers.noWaitAutoChoose;
+        if (noWaitRow) noWaitRow.style.display = autoChooseCheckbox.checked ? '' : 'none';
     }
     modifiersEnabledToggle.checked = modifiersEnabled;
     updateModifierDisplayValues();
@@ -788,7 +858,10 @@ async function requestAndLoadInventory() {
         if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestStash" });
     } catch (e) { /* not reachable */ }
     // Wait for WS response (leave + rejoin with human delays), then load from storage
-    setTimeout(() => loadInventory(), 2500);
+    setTimeout(() => {
+        loadInventory();
+        refreshAllTimestamps();
+    }, 2500);
 }
 
 async function loadInventory() {
@@ -1044,14 +1117,18 @@ refreshDailyBtn.addEventListener('click', () => fetchDailyOps());
 // --- Markets ---
 const marketContainer = document.getElementById('marketContainer');
 const darkMarketContainer = document.getElementById('darkMarketContainer');
+const soyuzMarketContainer = document.getElementById('soyuzMarketContainer');
 const refreshMarketBtn = document.getElementById('refreshMarketBtn');
 const refreshDarkMarketBtn = document.getElementById('refreshDarkMarketBtn');
+const refreshSoyuzMarketBtn = document.getElementById('refreshSoyuzMarketBtn');
 const coreMarketLabel = document.getElementById('coreMarketLabel');
 const darkMarketLabel = document.getElementById('darkMarketLabel');
+const soyuzMarketLabel = document.getElementById('soyuzMarketLabel');
 
 // Market names from WS data
 let coreMarketName = null;
 let darkMarketName = null;
+let soyuzMarketName = null;
 
 function formatTimeRemaining(dateStr) {
     if (!dateStr) return '--';
@@ -1071,10 +1148,18 @@ function getRemainingSeconds(dateStr) {
 }
 
 function updateMarketLabel(labelEl, wsName, placeholder, icon) {
-    if (wsName) {
-        labelEl.textContent = `${icon} ${wsName}`;
+    const img = labelEl.querySelector('img.faction-icon');
+    const text = wsName || placeholder;
+    if (img) {
+        // Preserve the faction image, replace only text nodes
+        labelEl.childNodes.forEach(n => { if (n.nodeType === 3) n.remove(); });
+        labelEl.appendChild(document.createTextNode(' ' + text));
     } else {
-        labelEl.textContent = `${icon} ${placeholder}`;
+        if (icon == '☭') {
+            labelEl.innerHTML = `<span style="color:#c33b3b;">☭</span> ${text}`;
+        } else {
+            labelEl.textContent = `${icon} ${text}`;
+        }
     }
 }
 
@@ -1091,6 +1176,14 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
     const rep = md.reputation;
 
     let html = '';
+
+    if (idPrefix == 'home') {
+        html += '<img src="factions/core_faction-96x96.png" class="faction-icon" alt="">';
+    } else if (idPrefix == 'dark') {
+        html += '<img src="factions/bmi_faction-96x96.png" class="faction-icon" alt="">';
+    } else if (idPrefix == 'soyuz') {
+        html += '<img src="factions/soyuz_faction-96x96.png" class="faction-icon" alt="">';
+    }
 
     // Credits
     if (md.userCredits !== undefined) {
@@ -1247,6 +1340,7 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
 // Store static reset timestamps so timers tick independently
 let coreNextJobsResetAt = null;
 let bmiNextJobsResetAt = null;
+let soyuzNextJobsResetAt = null;
 
 function renderMarket(data) {
     if (data && data.nextJobsResetAt) coreNextJobsResetAt = data.nextJobsResetAt;
@@ -1309,47 +1403,101 @@ async function loadDarkMarket() {
     renderDarkMarket(darkMarketData, darkMarketAvailable);
 }
 
-// Request both markets — just sends get.options, no room joins needed
+function renderSoyuzMarket(data, available) {
+    if (available === false) {
+        let warningHtml = '<div class="warning-banner">⚠️ SOYUZ market server is currently unreachable.</div>';
+        if (data && data.market) {
+            if (data.nextJobsResetAt) soyuzNextJobsResetAt = data.nextJobsResetAt;
+            if (data.market.marketName) {
+                soyuzMarketName = data.market.marketName;
+                updateMarketLabel(soyuzMarketLabel, soyuzMarketName, 'Market-3', '☭');
+            }
+            renderMarketInto(soyuzMarketContainer, data, 'Market-3 (cached)', 'soyuz');
+            soyuzMarketContainer.insertAdjacentHTML('afterbegin', warningHtml);
+        } else {
+            soyuzMarketContainer.innerHTML = warningHtml + '<div class="no-decisions">No cached market data available.</div>';
+        }
+        return;
+    }
+    if (data && data.nextJobsResetAt) soyuzNextJobsResetAt = data.nextJobsResetAt;
+    if (data && data.market && data.market.marketName) {
+        soyuzMarketName = data.market.marketName;
+        updateMarketLabel(soyuzMarketLabel, soyuzMarketName, 'Market-3', '☭');
+        TIMER_LABELS.soyuz_jobs = soyuzMarketName + ' Jobs Reset';
+        const opt = alarmTimerSelect.querySelector('option[value="soyuz_jobs"]');
+        if (opt) opt.textContent = TIMER_LABELS.soyuz_jobs;
+        renderPinnedTimers();
+        renderAlarmList();
+    }
+    renderMarketInto(soyuzMarketContainer, data, 'Market-3', 'soyuz');
+}
+
+async function loadSoyuzMarket() {
+    const { soyuzMarketData, soyuzMarketAvailable } = await chrome.storage.local.get(['soyuzMarketData', 'soyuzMarketAvailable']);
+    renderSoyuzMarket(soyuzMarketData, soyuzMarketAvailable);
+}
+
+// Request all markets — sequential to avoid get.lots/get.jobs confusion
+// content-early.js chains HOME → D4RK → SOYUZ internally via callbacks
 async function requestMarketData() {
     marketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
     darkMarketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
-    await chrome.storage.local.remove(['marketData', 'darkMarketData', 'darkMarketAvailable']);
+    soyuzMarketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
+    await chrome.storage.local.remove(['marketData', 'darkMarketData', 'darkMarketAvailable', 'soyuzMarketData', 'soyuzMarketAvailable']);
+
+    // Step 1: HOME
     try {
         const tab = await getCor3Tab();
-        if (tab) {
-            await chrome.tabs.sendMessage(tab.id, { action: "requestMarket" });
-            await chrome.tabs.sendMessage(tab.id, { action: "requestDarkMarket" });
-        }
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestMarket" });
     } catch (e) { /* content script not reachable */ }
-    // Poll for both markets to arrive
-    return new Promise((resolve) => {
-        let coreLoaded = false, darkLoaded = false;
+    await new Promise((resolve) => {
+        let done = false;
         const poll = setInterval(async () => {
-            const data = await chrome.storage.local.get(['marketData', 'darkMarketData']);
-            if (!coreLoaded && data.marketData && data.marketData.market) {
-                coreLoaded = true;
-                renderMarket(data.marketData);
-                refreshAllTimestamps();
-            }
-            if (!darkLoaded && data.darkMarketData && data.darkMarketData.market) {
-                darkLoaded = true;
-                renderDarkMarket(data.darkMarketData, true);
-                refreshAllTimestamps();
-            }
-            if (coreLoaded && darkLoaded) {
-                clearInterval(poll);
-                resolve();
+            const data = await chrome.storage.local.get('marketData');
+            if (data.marketData && data.marketData.market) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
             }
         }, 500);
-        // Safety timeout: 10s
-        setTimeout(() => {
-            clearInterval(poll);
-            if (!coreLoaded) loadMarket();
-            if (!darkLoaded) loadDarkMarket();
-            refreshAllTimestamps();
-            resolve();
-        }, 10000);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 15000);
     });
+    await loadMarket();
+    refreshAllTimestamps();
+
+    // Step 2: D4RK (sequential — only after HOME is done)
+    try {
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestDarkMarket" });
+    } catch (e) {}
+    await new Promise((resolve) => {
+        let done = false;
+        const poll = setInterval(async () => {
+            const data = await chrome.storage.local.get(['darkMarketData', 'darkMarketAvailable']);
+            if ((data.darkMarketData && data.darkMarketData.market) || data.darkMarketAvailable === false) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
+            }
+        }, 500);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 15000);
+    });
+    await loadDarkMarket();
+    refreshAllTimestamps();
+
+    // Step 3: SOYUZ (sequential — only after D4RK is done)
+    try {
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestSoyuzMarket" });
+    } catch (e) {}
+    await new Promise((resolve) => {
+        let done = false;
+        const poll = setInterval(async () => {
+            const data = await chrome.storage.local.get(['soyuzMarketData', 'soyuzMarketAvailable']);
+            if ((data.soyuzMarketData && data.soyuzMarketData.market) || data.soyuzMarketAvailable === false) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
+            }
+        }, 500);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 20000);
+    });
+    await loadSoyuzMarket();
+    refreshAllTimestamps();
 }
 
 async function refreshMarketData() {
@@ -1380,8 +1528,22 @@ async function refreshDarkMarketData() {
 
 refreshDarkMarketBtn.addEventListener('click', () => refreshDarkMarketData());
 
+async function refreshSoyuzMarketData() {
+    soyuzMarketContainer.innerHTML = '<div class="no-decisions">Refreshing market data...</div>';
+    try {
+        const tab = await getCor3Tab();
+        if (!tab) throw new Error('No cor3.gg tab');
+        await chrome.tabs.sendMessage(tab.id, { action: "refreshSoyuzMarket" });
+        setTimeout(() => { loadSoyuzMarket(); refreshAllTimestamps(); }, 5000);
+    } catch (e) {
+        setTimeout(() => { loadSoyuzMarket(); refreshAllTimestamps(); }, 500);
+    }
+}
+
+refreshSoyuzMarketBtn.addEventListener('click', () => refreshSoyuzMarketData());
+
 // On popup open: load cached market data (no WS requests)
-chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable'], (result) => {
+chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'soyuzMarketData', 'soyuzMarketAvailable'], (result) => {
     if (result.marketData) {
         if (result.marketData.nextJobsResetAt) coreNextJobsResetAt = result.marketData.nextJobsResetAt;
         if (result.marketData.market && result.marketData.market.marketName) {
@@ -1395,18 +1557,35 @@ chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable']
     } else {
         marketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
     }
-    if (result.darkMarketData) {
-        if (result.darkMarketData.nextJobsResetAt) bmiNextJobsResetAt = result.darkMarketData.nextJobsResetAt;
-        if (result.darkMarketData.market && result.darkMarketData.market.marketName) {
-            darkMarketName = result.darkMarketData.market.marketName;
-            updateMarketLabel(darkMarketLabel, darkMarketName, 'Market-2', '🌑');
-            TIMER_LABELS.dark_jobs = darkMarketName + ' Jobs Reset';
-            const opt = alarmTimerSelect.querySelector('option[value="dark_jobs"]');
-            if (opt) opt.textContent = TIMER_LABELS.dark_jobs;
+    if (result.darkMarketData || result.darkMarketAvailable === false) {
+        if (result.darkMarketData) {
+            if (result.darkMarketData.nextJobsResetAt) bmiNextJobsResetAt = result.darkMarketData.nextJobsResetAt;
+            if (result.darkMarketData.market && result.darkMarketData.market.marketName) {
+                darkMarketName = result.darkMarketData.market.marketName;
+                updateMarketLabel(darkMarketLabel, darkMarketName, 'Market-2', '🌑');
+                TIMER_LABELS.dark_jobs = darkMarketName + ' Jobs Reset';
+                const opt = alarmTimerSelect.querySelector('option[value="dark_jobs"]');
+                if (opt) opt.textContent = TIMER_LABELS.dark_jobs;
+            }
         }
-        renderDarkMarket(result.darkMarketData, result.darkMarketAvailable);
+        renderDarkMarket(result.darkMarketData || null, result.darkMarketAvailable);
     } else {
         darkMarketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
+    }
+    if (result.soyuzMarketData || result.soyuzMarketAvailable === false) {
+        if (result.soyuzMarketData) {
+            if (result.soyuzMarketData.nextJobsResetAt) soyuzNextJobsResetAt = result.soyuzMarketData.nextJobsResetAt;
+            if (result.soyuzMarketData.market && result.soyuzMarketData.market.marketName) {
+                soyuzMarketName = result.soyuzMarketData.market.marketName;
+                updateMarketLabel(soyuzMarketLabel, soyuzMarketName, 'Market-3', '☭');
+                TIMER_LABELS.soyuz_jobs = soyuzMarketName + ' Jobs Reset';
+                const opt = alarmTimerSelect.querySelector('option[value="soyuz_jobs"]');
+                if (opt) opt.textContent = TIMER_LABELS.soyuz_jobs;
+            }
+        }
+        renderSoyuzMarket(result.soyuzMarketData || null, result.soyuzMarketAvailable);
+    } else {
+        soyuzMarketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
     }
 });
 
@@ -1465,8 +1644,40 @@ async function refreshMarket2Only() {
         const tab = await getCor3Tab();
         if (tab) await chrome.tabs.sendMessage(tab.id, { action: "refreshDarkMarket" });
     } catch (e) {}
-    await waitForStorageKey('darkMarketData', 10000);
+    // Wait for either darkMarketData (success) or darkMarketAvailable (error/unreachable)
+    await new Promise((resolve) => {
+        let done = false;
+        const poll = setInterval(async () => {
+            const data = await chrome.storage.local.get(['darkMarketData', 'darkMarketAvailable']);
+            if (data.darkMarketData || data.darkMarketAvailable !== undefined) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
+            }
+        }, 400);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 10000);
+    });
     await loadDarkMarket();
+    refreshAllTimestamps();
+}
+
+async function refreshMarket3Only() {
+    soyuzMarketContainer.innerHTML = '<div class="no-decisions">Refreshing Market-3...</div>';
+    await chrome.storage.local.remove(['soyuzMarketData', 'soyuzMarketAvailable']);
+    try {
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "refreshSoyuzMarket" });
+    } catch (e) {}
+    // Wait for either soyuzMarketData (success) or soyuzMarketAvailable (error/unreachable)
+    await new Promise((resolve) => {
+        let done = false;
+        const poll = setInterval(async () => {
+            const data = await chrome.storage.local.get(['soyuzMarketData', 'soyuzMarketAvailable']);
+            if (data.soyuzMarketData || data.soyuzMarketAvailable !== undefined) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
+            }
+        }, 400);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 15000);
+    });
+    await loadSoyuzMarket();
     refreshAllTimestamps();
 }
 
@@ -1539,7 +1750,11 @@ refreshAllBtn.addEventListener('click', async () => {
         await executeRefreshStep('market2', refreshMarket2Only);
         await humanDelay();
 
-        // 5. Expeditions
+        // 5. Market-3 (SOYUZ)
+        await executeRefreshStep('market3', refreshMarket3Only);
+        await humanDelay();
+
+        // 6. Expeditions
         await executeRefreshStep('expeditions', refreshExpeditionsOnly);
         await humanDelay();
 
@@ -1595,15 +1810,16 @@ const pinnedTimersContainer = document.getElementById('pinnedTimersContainer');
 const pinDailyBtn = document.getElementById('pinDailyBtn');
 const pinCoreMarketBtn = document.getElementById('pinCoreMarketBtn');
 const pinDarkMarketBtn = document.getElementById('pinDarkMarketBtn');
+const pinSoyuzMarketBtn = document.getElementById('pinSoyuzMarketBtn');
 
 // State: which timers are pinned
-let pinnedTimers = { daily: false, home_jobs: false, dark_jobs: false };
+let pinnedTimers = { daily: false, home_jobs: false, dark_jobs: false, soyuz_jobs: false };
 // State: auto-refresh for market job timers
-let autoRefresh = { home_jobs: false, dark_jobs: false };
+let autoRefresh = { home_jobs: false, dark_jobs: false, soyuz_jobs: false };
 // Track if auto-refresh retry is pending
-let autoRefreshRetry = { home_jobs: null, dark_jobs: null };
+let autoRefreshRetry = { home_jobs: null, dark_jobs: null, soyuz_jobs: null };
 // Track last known timer values for zero-detection
-let lastTimerSeconds = { home_jobs: null, dark_jobs: null };
+let lastTimerSeconds = { home_jobs: null, dark_jobs: null, soyuz_jobs: null };
 
 async function loadPinnedState() {
     const data = await chrome.storage.sync.get(['pinnedTimers', 'autoRefresh']);
@@ -1621,11 +1837,12 @@ function updatePinButtons() {
     pinDailyBtn.classList.toggle('pinned', !!pinnedTimers.daily);
     pinCoreMarketBtn.classList.toggle('pinned', !!pinnedTimers.home_jobs);
     pinDarkMarketBtn.classList.toggle('pinned', !!pinnedTimers.dark_jobs);
+    pinSoyuzMarketBtn.classList.toggle('pinned', !!pinnedTimers.soyuz_jobs);
 }
 
 function renderPinnedTimers() {
     // Check if any timer is pinned (including expedition timers)
-    let anyPinned = pinnedTimers.daily || pinnedTimers.home_jobs || pinnedTimers.dark_jobs;
+    let anyPinned = pinnedTimers.daily || pinnedTimers.home_jobs || pinnedTimers.dark_jobs || pinnedTimers.soyuz_jobs;
     if (!anyPinned) {
         for (const key of Object.keys(pinnedTimers)) {
             if (key.startsWith('exp_') && pinnedTimers[key]) { anyPinned = true; break; }
@@ -1638,7 +1855,8 @@ function renderPinnedTimers() {
         const row = document.createElement('div');
         row.className = 'pinned-timer-row';
         row.innerHTML = `
-            <span class="pinned-timer-label">📅 Daily Ops</span>
+            <div><span class="pinned-timer-symbol-daily">📅 </span>
+            <span class="pinned-timer-label">Daily Ops</span></div>
             <span class="pinned-timer-value" id="pinnedDailyValue">--:--:--</span>
         `;
         pinnedTimersContainer.appendChild(row);
@@ -1648,7 +1866,8 @@ function renderPinnedTimers() {
         const row = document.createElement('div');
         row.className = 'pinned-timer-row';
         row.innerHTML = `
-            <span class="pinned-timer-label">🏠 ${name} Jobs</span>
+            <div><span class="pinned-timer-symbol-core">🏠 </span>
+            <span class="pinned-timer-label">${name} Jobs</span></div>
             <span class="pinned-timer-value" id="pinnedCoreJobsValue">--:--:--</span>
             <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
                 <input type="checkbox" id="autoRefreshCore" ${autoRefresh.home_jobs ? 'checked' : ''}> Auto
@@ -1666,7 +1885,8 @@ function renderPinnedTimers() {
         const row = document.createElement('div');
         row.className = 'pinned-timer-row';
         row.innerHTML = `
-            <span class="pinned-timer-label">🌑 ${name} Jobs</span>
+            <div><span class="pinned-timer-symbol-dark">🌑 </span>
+            <span class="pinned-timer-label">${name} Jobs</span></div>
             <span class="pinned-timer-value" id="pinnedDarkJobsValue">--:--:--</span>
             <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
                 <input type="checkbox" id="autoRefreshDark" ${autoRefresh.dark_jobs ? 'checked' : ''}> Auto
@@ -1675,6 +1895,26 @@ function renderPinnedTimers() {
         pinnedTimersContainer.appendChild(row);
         row.querySelector('#autoRefreshDark').addEventListener('change', async (e) => {
             autoRefresh.dark_jobs = e.target.checked;
+            await savePinnedState();
+            sendAutoRefreshToContent();
+        });
+    }
+
+    if (pinnedTimers.soyuz_jobs) {
+        const name = soyuzMarketName || 'Market-3';
+        const row = document.createElement('div');
+        row.className = 'pinned-timer-row';
+        row.innerHTML = `
+            <div><span class="pinned-timer-symbol-soyuz">☭ </span>
+            <span class="pinned-timer-label">${name} Jobs</span></div>
+            <span class="pinned-timer-value" id="pinnedSoyuzJobsValue">--:--:--</span>
+            <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
+                <input type="checkbox" id="autoRefreshSoyuz" ${autoRefresh.soyuz_jobs ? 'checked' : ''}> Auto
+            </label>
+        `;
+        pinnedTimersContainer.appendChild(row);
+        row.querySelector('#autoRefreshSoyuz').addEventListener('change', async (e) => {
+            autoRefresh.soyuz_jobs = e.target.checked;
             await savePinnedState();
             sendAutoRefreshToContent();
         });
@@ -1757,6 +1997,10 @@ function updatePinnedTimerValues() {
     if (pinnedDark) {
         pinnedDark.textContent = bmiNextJobsResetAt ? formatTimeRemaining(bmiNextJobsResetAt) : '--:--:--';
     }
+    const pinnedSoyuz = document.getElementById('pinnedSoyuzJobsValue');
+    if (pinnedSoyuz) {
+        pinnedSoyuz.textContent = soyuzNextJobsResetAt ? formatTimeRemaining(soyuzNextJobsResetAt) : '--:--:--';
+    }
     // Expedition pinned timers
     document.querySelectorAll('.pinned-exp-timer').forEach(el => {
         const expId = el.dataset.expId;
@@ -1783,6 +2027,12 @@ pinDarkMarketBtn.addEventListener('click', async () => {
     updatePinButtons();
     renderPinnedTimers();
 });
+pinSoyuzMarketBtn.addEventListener('click', async () => {
+    pinnedTimers.soyuz_jobs = !pinnedTimers.soyuz_jobs;
+    await savePinnedState();
+    updatePinButtons();
+    renderPinnedTimers();
+});
 
 loadPinnedState();
 
@@ -1805,55 +2055,11 @@ chrome.storage.sync.get('autoRefresh', (data) => {
 });
 
 // Auto-refresh check in popup: when pinned market timer hits 0, trigger refresh
+// Auto-refresh is now handled entirely by content.js (sequential, works in background).
+// Popup UI updates automatically via chrome.storage.onChanged when market data arrives.
 function checkAutoRefreshFromPopup() {
-    if (autoRefresh.home_jobs && coreNextJobsResetAt) {
-        const sec = getRemainingSeconds(coreNextJobsResetAt);
-        if (sec !== null && sec <= 0) {
-            triggerAutoRefreshForMarket('home');
-        }
-    }
-    if (autoRefresh.dark_jobs && bmiNextJobsResetAt) {
-        const sec = getRemainingSeconds(bmiNextJobsResetAt);
-        if (sec !== null && sec <= 0) {
-            triggerAutoRefreshForMarket('dark');
-        }
-    }
-}
-
-function triggerAutoRefreshForMarket(which) {
-    const retryKey = which === 'home' ? 'home_jobs' : 'dark_jobs';
-    // Prevent multiple concurrent retries
-    if (autoRefreshRetry[retryKey]) return;
-
-    autoRefreshRetry[retryKey] = true;
-
-    // First attempt: refresh immediately
-    doMarketRefreshAction(which);
-
-    // Then after 10s, check if timer is still 0 and retry if needed
-    setTimeout(() => {
-        autoRefreshRetry[retryKey] = false;
-        const resetAt = which === 'home' ? coreNextJobsResetAt : bmiNextJobsResetAt;
-        const sec = getRemainingSeconds(resetAt);
-        if (sec !== null && sec <= 0) {
-            // Timer is still 0 — retry
-            triggerAutoRefreshForMarket(which);
-        }
-    }, 10000);
-}
-
-async function doMarketRefreshAction(which) {
-    try {
-        const tab = await getCor3Tab();
-        if (!tab) return;
-        if (which === 'home') {
-            await chrome.tabs.sendMessage(tab.id, { action: "refreshMarket" });
-            setTimeout(() => loadMarket(), 4000);
-        } else {
-            await chrome.tabs.sendMessage(tab.id, { action: "refreshDarkMarket" });
-            setTimeout(() => loadDarkMarket(), 4000);
-        }
-    } catch (e) { /* not reachable */ }
+    // No-op: content.js handles sequential auto-refresh for all markets.
+    // Popup UI refreshes via storage listeners when new market data is written.
 }
 
 // Update market timers + daily timer + pinned timers + expedition timers periodically
@@ -1874,12 +2080,24 @@ setInterval(() => {
             darkResetEl.textContent = `⏳ Jobs Reset: ${formatTimeRemaining(bmiNextJobsResetAt)}`;
         }
     }
+    if (soyuzNextJobsResetAt) {
+        const soyuzResetEl = soyuzMarketContainer.querySelector('.soyuz-reset-timer');
+        if (soyuzResetEl) {
+            soyuzResetEl.textContent = `⏳ Jobs Reset: ${formatTimeRemaining(soyuzNextJobsResetAt)}`;
+        }
+    }
 
     // Expedition timers inside expedition info cards
     document.querySelectorAll('.exp-timer').forEach(el => {
         const expId = el.dataset.expId;
         const endTime = expeditionEndTimes[expId];
         if (endTime) el.textContent = formatTimeRemaining(endTime);
+    });
+
+    // Auto-jobs reset timers
+    document.querySelectorAll('.auto-jobs-reset-timer').forEach(el => {
+        const resetAt = el.dataset.resetAt;
+        if (resetAt) el.textContent = '⏳ Jobs Reset: ' + formatTimeRemaining(resetAt);
     });
 
     // Pinned timer values
@@ -1910,6 +2128,34 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     if (changes.mercenariesData || changes.mercConfigData) {
         loadMercenaries();
+    }
+    // Live-update market data (handles initial load, background refreshes, error states)
+    if (changes.marketData) {
+        const md = changes.marketData.newValue;
+        if (md) {
+            if (md.nextJobsResetAt) coreNextJobsResetAt = md.nextJobsResetAt;
+            if (md.market && md.market.marketName) {
+                coreMarketName = md.market.marketName;
+                updateMarketLabel(coreMarketLabel, coreMarketName, 'Market-1', '🏠');
+                TIMER_LABELS.home_jobs = coreMarketName + ' Jobs Reset';
+                const opt = alarmTimerSelect.querySelector('option[value="home_jobs"]');
+                if (opt) opt.textContent = TIMER_LABELS.home_jobs;
+            }
+            renderMarket(md);
+            refreshAllTimestamps();
+        }
+    }
+    if (changes.darkMarketData || changes.darkMarketAvailable) {
+        loadDarkMarket();
+        refreshAllTimestamps();
+    }
+    if (changes.soyuzMarketData || changes.soyuzMarketAvailable) {
+        loadSoyuzMarket();
+        refreshAllTimestamps();
+    }
+    if (changes.dailyOpsData) {
+        loadCachedDailyOps();
+        refreshAllTimestamps();
     }
 });
 
@@ -1957,6 +2203,116 @@ autoDecryptToggle.addEventListener('change', async () => {
     }
 });
 
+// --- Auto ICE Wall Hacking ---
+const autoIceWallToggle = document.getElementById('autoIceWallToggle');
+const iceWallStatus = document.getElementById('iceWallStatus');
+
+function updateIceWallStatusLabel(enabled) {
+    iceWallStatus.textContent = enabled ? 'Active' : 'Off';
+    iceWallStatus.style.color = enabled ? 'var(--accent-green)' : 'var(--text-dim)';
+}
+
+// Load saved state on popup open
+chrome.storage.sync.get('autoIceWallEnabled', (data) => {
+    const enabled = !!data.autoIceWallEnabled;
+    autoIceWallToggle.checked = enabled;
+    updateIceWallStatusLabel(enabled);
+});
+
+autoIceWallToggle.addEventListener('change', async () => {
+    const enabled = autoIceWallToggle.checked;
+    await chrome.storage.sync.set({ autoIceWallEnabled: enabled });
+    updateIceWallStatusLabel(enabled);
+
+    // Send toggle message to content script
+    const tab = await getCor3Tab();
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, {
+            action: "toggleIceWallSolver",
+            enabled: enabled
+        }).catch(() => {});
+    }
+});
+
+// ICE Wall solver status line
+const iceWallSolverStatusLine = document.getElementById('iceWallSolverStatusLine');
+
+function renderIceWallSolverStatus(statusObj) {
+    if (!statusObj || !statusObj.message) {
+        iceWallSolverStatusLine.style.display = 'none';
+        return;
+    }
+    // Only show if recent (within 5 minutes)
+    if (Date.now() - statusObj.timestamp > 5 * 60 * 1000) {
+        iceWallSolverStatusLine.style.display = 'none';
+        return;
+    }
+    const colorMap = { success: 'var(--accent-green)', error: 'var(--accent-red, #ff5555)', warn: 'var(--accent-orange)', info: 'var(--accent-cyan)' };
+    iceWallSolverStatusLine.textContent = '\uD83D\uDD13 ' + statusObj.message;
+    iceWallSolverStatusLine.style.color = colorMap[statusObj.level] || 'var(--text-dim)';
+    iceWallSolverStatusLine.style.display = '';
+}
+
+// Load cached status on popup open
+chrome.storage.local.get('iceWallSolverStatus', (data) => {
+    renderIceWallSolverStatus(data.iceWallSolverStatus);
+});
+
+// --- Auto Simple Decrypt Hacking ---
+const autoSimpleDecryptToggle = document.getElementById('autoSimpleDecryptToggle');
+const simpleDecryptStatus = document.getElementById('simpleDecryptStatus');
+
+function updateSimpleDecryptStatusLabel(enabled) {
+    simpleDecryptStatus.textContent = enabled ? 'Active' : 'Off';
+    simpleDecryptStatus.style.color = enabled ? 'var(--accent-green)' : 'var(--text-dim)';
+}
+
+// Load saved state on popup open
+chrome.storage.sync.get('autoSimpleDecryptEnabled', (data) => {
+    const enabled = !!data.autoSimpleDecryptEnabled;
+    autoSimpleDecryptToggle.checked = enabled;
+    updateSimpleDecryptStatusLabel(enabled);
+});
+
+autoSimpleDecryptToggle.addEventListener('change', async () => {
+    const enabled = autoSimpleDecryptToggle.checked;
+    await chrome.storage.sync.set({ autoSimpleDecryptEnabled: enabled });
+    updateSimpleDecryptStatusLabel(enabled);
+
+    // Send toggle message to content script
+    const tab = await getCor3Tab();
+    if (tab) {
+        chrome.tabs.sendMessage(tab.id, {
+            action: "toggleSimpleDecryptSolver",
+            enabled: enabled
+        }).catch(() => {});
+    }
+});
+
+// Simple Decrypt solver status line
+const simpleDecryptSolverStatusLine = document.getElementById('simpleDecryptSolverStatusLine');
+
+function renderSimpleDecryptSolverStatus(statusObj) {
+    if (!statusObj || !statusObj.message) {
+        simpleDecryptSolverStatusLine.style.display = 'none';
+        return;
+    }
+    // Only show if recent (within 5 minutes)
+    if (Date.now() - statusObj.timestamp > 5 * 60 * 1000) {
+        simpleDecryptSolverStatusLine.style.display = 'none';
+        return;
+    }
+    const colorMap = { success: 'var(--accent-green)', error: 'var(--accent-red, #ff5555)', warn: 'var(--accent-orange)', info: 'var(--accent-cyan)' };
+    simpleDecryptSolverStatusLine.textContent = '\uD83D\uDD13 ' + statusObj.message;
+    simpleDecryptSolverStatusLine.style.color = colorMap[statusObj.level] || 'var(--text-dim)';
+    simpleDecryptSolverStatusLine.style.display = '';
+}
+
+// Load cached status on popup open
+chrome.storage.local.get('simpleDecryptSolverStatus', (data) => {
+    renderSimpleDecryptSolverStatus(data.simpleDecryptSolverStatus);
+});
+
 // --- Auto Daily Hacking ---
 const autoDailyHackToggle = document.getElementById('autoDailyHackToggle');
 const dailyHackStatus = document.getElementById('dailyHackStatus');
@@ -1986,7 +2342,21 @@ autoDailyHackToggle.addEventListener('change', async () => {
     await chrome.storage.sync.set({ autoDailyHackEnabled: enabled });
     updateDailyHackStatusLabel(enabled);
 
-    // Don't clear the log when toggling — keep showing old result until new hack
+    if (enabled) {
+        // Check if daily is already claimed — if yes, don't trigger automation
+        const { dailyOpsData } = await chrome.storage.local.get('dailyOpsData');
+        if (dailyOpsData && dailyOpsData.hasClaimedToday) {
+            if (dailyHackLogEl) {
+                dailyHackLogEl.textContent = 'Daily already claimed today — skipping automation.';
+                dailyHackLogEl.style.display = '';
+            }
+            // Turn toggle back off
+            autoDailyHackToggle.checked = false;
+            await chrome.storage.sync.set({ autoDailyHackEnabled: false });
+            updateDailyHackStatusLabel(false);
+            return;
+        }
+    }
 
     // Send toggle to content script
     const tab = await getCor3Tab();
@@ -1998,15 +2368,40 @@ autoDailyHackToggle.addEventListener('change', async () => {
     }
 });
 
-// Listen for daily hack log updates (Signal Hack console output)
+// Listen for daily hack log updates and toggle auto-disable
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (changes.dailyHackLog) {
+    if (area === 'local' && changes.dailyHackLog) {
         const msg = changes.dailyHackLog.newValue;
-        if (msg && dailyHackLogEl && autoDailyHackToggle.checked) {
+        if (msg && dailyHackLogEl) {
             dailyHackLogEl.textContent = msg;
             dailyHackLogEl.style.display = '';
         }
+    }
+    // Auto-disable toggle when solver finishes (success or failure)
+    if (area === 'sync' && changes.autoDailyHackEnabled) {
+        const enabled = !!changes.autoDailyHackEnabled.newValue;
+        autoDailyHackToggle.checked = enabled;
+        updateDailyHackStatusLabel(enabled);
+    }
+    // Sync ICE Wall toggle state (e.g. when auto-job enables it)
+    if (area === 'sync' && changes.autoIceWallEnabled) {
+        const enabled = !!changes.autoIceWallEnabled.newValue;
+        autoIceWallToggle.checked = enabled;
+        updateIceWallStatusLabel(enabled);
+    }
+    // Live update ICE Wall solver status
+    if (area === 'local' && changes.iceWallSolverStatus) {
+        renderIceWallSolverStatus(changes.iceWallSolverStatus.newValue);
+    }
+    // Sync Simple Decrypt toggle state (e.g. when auto-job enables it)
+    if (area === 'sync' && changes.autoSimpleDecryptEnabled) {
+        const enabled = !!changes.autoSimpleDecryptEnabled.newValue;
+        autoSimpleDecryptToggle.checked = enabled;
+        updateSimpleDecryptStatusLabel(enabled);
+    }
+    // Live update Simple Decrypt solver status
+    if (area === 'local' && changes.simpleDecryptSolverStatus) {
+        renderSimpleDecryptSolverStatus(changes.simpleDecryptSolverStatus.newValue);
     }
 });
 
@@ -2016,13 +2411,14 @@ async function displayVersionInfo(retryCount) {
     const versionSection = document.getElementById('versionInfoSection');
     if (!versionSection) return;
     const extVersion = chrome.runtime.getManifest().version;
-    const { webVersion, systemVersion } = await chrome.storage.local.get(['webVersion', 'systemVersion']);
+    const { webVersion, systemVersion, patchVersion } = await chrome.storage.local.get(['webVersion', 'systemVersion', 'patchVersion']);
 
     // Fallback: try to get versions from content script globals if storage fails
     let finalWebVersion = webVersion;
     let finalSystemVersion = systemVersion;
+    let finalPatchVersion = patchVersion;
 
-    if (!webVersion || !systemVersion) {
+    if (!webVersion || !systemVersion || !patchVersion) {
         try {
             const tab = await getCor3Tab();
             if (tab) {
@@ -2036,6 +2432,10 @@ async function displayVersionInfo(retryCount) {
                         finalSystemVersion = response.systemVersion;
                         chrome.storage.local.set({ systemVersion: response.systemVersion });
                     }
+                    if (!finalPatchVersion && response.patchVersion) {
+                        finalPatchVersion = response.patchVersion;
+                        chrome.storage.local.set({ patchVersion: response.patchVersion });
+                    }
                 }
             }
         } catch (e) {
@@ -2046,11 +2446,12 @@ async function displayVersionInfo(retryCount) {
     let parts = [`Extension: v${extVersion}`];
     if (finalWebVersion) parts.push(`Web: ${finalWebVersion}`);
     if (finalSystemVersion) parts.push(`System: ${finalSystemVersion}`);
+    if (finalPatchVersion) parts.push(`Patch: ${finalPatchVersion}`);
     versionSection.innerHTML = parts.join(' · ');
     versionSection.style.display = 'block';
 
     // Retry a few times if versions are missing (data may arrive after popup opens)
-    if ((!finalWebVersion || !finalSystemVersion) && retryCount < 5) {
+    if ((!finalWebVersion || !finalSystemVersion || !finalPatchVersion) && retryCount < 5) {
         setTimeout(() => displayVersionInfo(retryCount + 1), 2000);
     }
 }
@@ -2094,18 +2495,20 @@ function compareVersions(v1, v2) {
     return 0;
 }
 
-// Auto-check GitHub for web/system version differences on popup load
+// Auto-check GitHub for web/system/patch version differences on popup load
 async function autoCheckWebsiteUpdated() {
     const webVersionNotice = document.getElementById('webVersionNotice');
     const webVersionData = document.getElementById('webVersionData');
     const systemVersionNotice = document.getElementById('systemVersionNotice');
     const systemVersionData = document.getElementById('systemVersionData');
+    const patchVersionNotice = document.getElementById('patchVersionNotice');
+    const patchVersionData = document.getElementById('patchVersionData');
     if (!webVersionNotice || !webVersionData || !systemVersionNotice || !systemVersionData) return;
     try {
         const resp = await fetch('https://raw.githubusercontent.com/Femtoce11/cor3-helper/main/versions.json', { cache: 'no-store' });
         if (!resp.ok) return;
         const remote = await resp.json();
-        const { webVersion, systemVersion } = await chrome.storage.local.get(['webVersion', 'systemVersion']);
+        const { webVersion, systemVersion, patchVersion } = await chrome.storage.local.get(['webVersion', 'systemVersion', 'patchVersion']);
 
         // Check web version - only warn if local is less than remote
         if (webVersion && remote.web) {
@@ -2113,7 +2516,7 @@ async function autoCheckWebsiteUpdated() {
             if (comparison > 0) {
                 webVersionNotice.innerHTML = '⚠️ Website is recently updated';
                 webVersionNotice.style.display = 'block';
-                webVersionData.innerHTML = "Old version -> " + remote.web;
+                webVersionData.innerHTML = "Detected: " + webVersion + " · Old: " + remote.web;
                 webVersionData.style.display = 'block';
             }
         }
@@ -2128,14 +2531,25 @@ async function autoCheckWebsiteUpdated() {
                 webVersionData.style.display = 'block';
             }
         }
+
+        // Check patch version - warn if detected version is higher than remote (new patch)
+        if (patchVersion && remote.patch && patchVersionNotice && patchVersionData) {
+            const comparison = compareVersions(patchVersion, remote.patch);
+            if (comparison > 0) {
+                patchVersionNotice.innerHTML = '⚠️ Patch version is changed. Check patch notes!';
+                patchVersionNotice.style.display = 'block';
+                patchVersionData.innerHTML = "Detected: " + patchVersion + " · Old: " + remote.patch;
+                patchVersionData.style.display = 'block';
+            }
+        }
     } catch (e) { /* silent */ }
 }
 autoCheckWebsiteUpdated();
 
-// Auto-update version display when web/system version arrives
+// Auto-update version display when web/system/patch version arrives
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
-    if (changes.webVersion || changes.systemVersion) {
+    if (changes.webVersion || changes.systemVersion || changes.patchVersion) {
         displayVersionInfo();
         autoCheckWebsiteUpdated();
     }
@@ -2331,9 +2745,11 @@ function saveAutoSendMercSettings() {
 
 autoSendMercenaryToggle.addEventListener('change', () => {
     saveAutoSendMercSettings();
-    // If user re-enables, clear stash warning
+    // If user re-enables, clear stash warning and expedition errors
     if (autoSendMercenaryToggle.checked) {
         updateMercStashWarning(null); // hide warning
+        chrome.storage.local.remove('expeditionLaunchError');
+        loadExpeditions();
     }
 });
 
@@ -2424,7 +2840,13 @@ function renderMercenaries(data) {
         const traitName = merc.traitName || merc.trait || '--';
         const traitDesc = merc.traitDescription || '';
 
-        let html = `<div class="merc-details">`;
+        // Avatar image (avatarSeed is now a CDN URL)
+        let avatarHtml = '';
+        if (merc.avatarSeed && merc.avatarSeed.startsWith('http')) {
+            avatarHtml = `<img class="merc-avatar" src="${merc.avatarSeed}" alt="${merc.callsign || ''}" loading="lazy">`;
+        }
+
+        let html = `${avatarHtml}<div class="merc-details">`;
         html += `<div class="merc-name">${merc.callsign || merc.name || 'Unknown'}</div>`;
         html += `<div style="margin-bottom:4px;"><span class="merc-status ${statusClass}">${status}</span>${restTimer}</div>`;
         html += `<div class="merc-info">`;
@@ -2566,6 +2988,14 @@ const backgroundStatus = document.getElementById('backgroundStatus');
 const disableNetworkFogToggle = document.getElementById('disableNetworkFogToggle');
 const networkFogStatus = document.getElementById('networkFogStatus');
 
+// --- Move Notifications to Left Toggle ---
+const moveNotificationsToggle = document.getElementById('moveNotificationsToggle');
+const moveNotificationsStatus = document.getElementById('moveNotificationsStatus');
+
+// --- Auto Update Markets Toggle ---
+const autoUpdateMarketsToggle = document.getElementById('autoUpdateMarketsToggle');
+const autoUpdateMarketsStatus = document.getElementById('autoUpdateMarketsStatus');
+
 function updateNetworkFogStatus() {
     if (!disableNetworkFogToggle || !networkFogStatus) return;
     const isEnabled = disableNetworkFogToggle.checked;
@@ -2573,8 +3003,22 @@ function updateNetworkFogStatus() {
     networkFogStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
 }
 
+function updateMoveNotificationsStatus() {
+    if (!moveNotificationsToggle || !moveNotificationsStatus) return;
+    const isEnabled = moveNotificationsToggle.checked;
+    moveNotificationsStatus.textContent = isEnabled ? 'Active' : 'Off';
+    moveNotificationsStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
+}
+
+function updateAutoUpdateMarketsStatus() {
+    if (!autoUpdateMarketsToggle || !autoUpdateMarketsStatus) return;
+    const isEnabled = autoUpdateMarketsToggle.checked;
+    autoUpdateMarketsStatus.textContent = isEnabled ? 'Active' : 'Off';
+    autoUpdateMarketsStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
+}
+
 // Load saved settings
-chrome.storage.sync.get(['disableSystemMessages', 'disableBackground', 'disableNetworkFog'], (result) => {
+chrome.storage.sync.get(['disableSystemMessages', 'disableBackground', 'disableNetworkFog', 'moveNotificationsLeft', 'autoUpdateMarkets'], (result) => {
     if (disableSystemMessagesToggle) {
         disableSystemMessagesToggle.checked = result.disableSystemMessages || false;
         updateSystemMessageStatus();
@@ -2586,6 +3030,14 @@ chrome.storage.sync.get(['disableSystemMessages', 'disableBackground', 'disableN
     if (disableNetworkFogToggle) {
         disableNetworkFogToggle.checked = result.disableNetworkFog || false;
         updateNetworkFogStatus();
+    }
+    if (moveNotificationsToggle) {
+        moveNotificationsToggle.checked = result.moveNotificationsLeft || false;
+        updateMoveNotificationsStatus();
+    }
+    if (autoUpdateMarketsToggle) {
+        autoUpdateMarketsToggle.checked = result.autoUpdateMarkets || false;
+        updateAutoUpdateMarketsStatus();
     }
 });
 
@@ -2704,7 +3156,907 @@ if (disableNetworkFogToggle) {
     });
 }
 
+// Handle move notifications toggle changes
+if (moveNotificationsToggle) {
+    moveNotificationsToggle.addEventListener('change', async () => {
+        const isEnabled = moveNotificationsToggle.checked;
+        chrome.storage.sync.set({ moveNotificationsLeft: isEnabled });
+        updateMoveNotificationsStatus();
+        try {
+            const tab = await getCor3Tab();
+            if (tab) {
+                if (isEnabled) {
+                    await chrome.tabs.sendMessage(tab.id, { action: "moveNotificationsLeft" });
+                } else {
+                    await chrome.tabs.sendMessage(tab.id, { action: "moveNotificationsRight" });
+                }
+            }
+        } catch (e) {
+            console.error('[COR3 Helper] Failed to toggle notification position:', e);
+            cor3LogError('popup.js', e, { action: 'toggleNotificationPosition' });
+        }
+    });
+}
+
+// Handle auto update markets toggle changes
+if (autoUpdateMarketsToggle) {
+    autoUpdateMarketsToggle.addEventListener('change', () => {
+        const isEnabled = autoUpdateMarketsToggle.checked;
+        chrome.storage.sync.set({ autoUpdateMarkets: isEnabled });
+        updateAutoUpdateMarketsStatus();
+    });
+}
+
 // Initialize status on load
 updateSystemMessageStatus();
 updateBackgroundStatus();
 updateNetworkFogStatus();
+updateMoveNotificationsStatus();
+updateAutoUpdateMarketsStatus();
+
+// --- Auto Job Solver ---
+const autoJobSolverToggle = document.getElementById('autoJobSolverToggle');
+const autoJobSolverStatus = document.getElementById('autoJobSolverStatus');
+const autoJobSolverSection = document.getElementById('autoJobSolverSection');
+const autoJobsTabHome = document.getElementById('autoJobsTabHome');
+const autoJobsTabDark = document.getElementById('autoJobsTabDark');
+const autoJobsTabSoyuz = document.getElementById('autoJobsTabSoyuz');
+const autoJobsContentHome = document.getElementById('autoJobsContentHome');
+const autoJobsContentDark = document.getElementById('autoJobsContentDark');
+const autoJobsContentSoyuz = document.getElementById('autoJobsContentSoyuz');
+const autoJobsStartBtn = document.getElementById('autoJobsStartBtn');
+const autoJobsDebugToggle = document.getElementById('autoJobsDebugToggle');
+const autoJobsDebugConsole = document.getElementById('autoJobsDebugConsole');
+const debugTabJobs = document.getElementById('debugTabJobs');
+const debugTabLogs = document.getElementById('debugTabLogs');
+const debugJobsBody = document.getElementById('debugJobsBody');
+const debugLogsBody = document.getElementById('debugLogsBody');
+const refreshAutoJobsBtn = document.getElementById('refreshAutoJobsBtn');
+const autoFinishAllJobsToggle = document.getElementById('autoFinishAllJobsToggle');
+
+const SUPPORTED_JOB_TYPES = [
+    'File Decryption',
+    'IP Injection',
+    'Data Download',
+    'Log Deletion',
+    'Log Download',
+    'Decrypt & Extract',
+    'File Elimination',
+    'Data Upload',
+    'IP Cleanup'
+];
+
+const MARKET_IDS = {
+    home: '019d3ea4-85bd-7389-904d-8f7c85841134',
+    dark: '019d3ea4-85bd-7389-904d-908ba9194aa0',
+    soyuz: '019da731-2db5-7d76-9447-1ea3b9b78001'
+};
+
+// Server priority (furthest first — matching auto-job-solver.js)
+const SERVER_PRIORITY = ['RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4L4', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
+function getServerPriority(name) {
+    const idx = SERVER_PRIORITY.indexOf(name);
+    return idx >= 0 ? idx : SERVER_PRIORITY.length;
+}
+
+// Job type priority (matching auto-job-solver.js — transit jobs first, then simple, then complex)
+const JOB_TYPE_PRIORITY = [
+    'IP Injection', 'IP Cleanup', 'Data Upload', 'Data Download',
+    'Log Deletion', 'Log Download', 'File Elimination', 'File Decryption', 'Decrypt & Extract'
+];
+function getJobTypePriority(name) {
+    const idx = JOB_TYPE_PRIORITY.indexOf(name);
+    return idx >= 0 ? idx : JOB_TYPE_PRIORITY.length;
+}
+
+// Log-related jobs are bugged on D4RK RM7CE (server has no logs tab)
+const LOG_JOB_TYPES = ['Log Deletion', 'Log Download'];
+function isJobBugged(job) {
+    const serverName = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].serverName : (job.serverName || '');
+    return serverName === 'D4RK RM7CE' && LOG_JOB_TYPES.includes(job.name || job.type);
+}
+
+let autoJobsRunning = false;
+let autoFinishAllActive = false;
+let autoJobsSelectedTypes = { home: [], dark: [], soyuz: [] };
+let autoJobsDebugLogs = [];
+const AUTO_JOBS_MAX_LOGS = 200;
+let autoJobsTracker = []; // {jobId, name, type, server, market, status}
+
+// Toggle section visibility
+function updateAutoJobSolverStatus(enabled) {
+    autoJobSolverStatus.textContent = enabled ? 'Active' : 'Off';
+    autoJobSolverStatus.style.color = enabled ? 'var(--accent-green)' : 'var(--text-dim)';
+    autoJobSolverSection.style.display = enabled ? '' : 'none';
+}
+
+chrome.storage.sync.get('autoJobSolverEnabled', (data) => {
+    const enabled = !!data.autoJobSolverEnabled;
+    autoJobSolverToggle.checked = enabled;
+    updateAutoJobSolverStatus(enabled);
+    if (enabled) renderAutoJobsTabs();
+});
+
+autoJobSolverToggle.addEventListener('change', async () => {
+    const enabled = autoJobSolverToggle.checked;
+    await chrome.storage.sync.set({ autoJobSolverEnabled: enabled });
+    updateAutoJobSolverStatus(enabled);
+    if (enabled) renderAutoJobsTabs();
+});
+
+// Market tabs
+autoJobsTabHome.addEventListener('click', () => switchAutoJobsTab('home'));
+autoJobsTabDark.addEventListener('click', () => switchAutoJobsTab('dark'));
+autoJobsTabSoyuz.addEventListener('click', () => switchAutoJobsTab('soyuz'));
+
+function switchAutoJobsTab(market) {
+    autoJobsTabHome.classList.toggle('active', market === 'home');
+    autoJobsTabDark.classList.toggle('active', market === 'dark');
+    autoJobsTabSoyuz.classList.toggle('active', market === 'soyuz');
+    autoJobsContentHome.classList.toggle('active', market === 'home');
+    autoJobsContentDark.classList.toggle('active', market === 'dark');
+    autoJobsContentSoyuz.classList.toggle('active', market === 'soyuz');
+}
+
+// Render job types from cached market data
+async function renderAutoJobsTabs() {
+    const { marketData, darkMarketData, soyuzMarketData } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+    renderAutoJobsMarket(autoJobsContentHome, marketData, 'home');
+    renderAutoJobsMarket(autoJobsContentDark, darkMarketData, 'dark');
+    renderAutoJobsMarket(autoJobsContentSoyuz, soyuzMarketData, 'soyuz');
+    // Update tab labels with market names
+    if (marketData && marketData.market && marketData.market.marketName) {
+        autoJobsTabHome.textContent = '🏠 ' + marketData.market.marketName;
+    }
+    if (darkMarketData && darkMarketData.market && darkMarketData.market.marketName) {
+        autoJobsTabDark.textContent = '🌑 ' + darkMarketData.market.marketName;
+    }
+    if (soyuzMarketData && soyuzMarketData.market && soyuzMarketData.market.marketName) {
+        autoJobsTabSoyuz.innerHTML = '<span style="color:#c33b3b;">☭</span> ' + soyuzMarketData.market.marketName;
+    }
+}
+
+function renderAutoJobsMarket(container, data, marketKey) {
+    container.innerHTML = '';
+    if (!data || (!data.jobs && !data.recentJobs)) {
+        container.innerHTML = '<div class="auto-jobs-no-jobs">No jobs available. Click 🔄 to refresh market data.</div>';
+        return;
+    }
+
+    // Show job reset timer at the top
+    if (data.nextJobsResetAt) {
+        const timerDiv = document.createElement('div');
+        timerDiv.className = 'auto-jobs-reset-timer';
+        timerDiv.dataset.resetAt = data.nextJobsResetAt;
+        timerDiv.textContent = '⏳ Jobs Reset: ' + formatTimeRemaining(data.nextJobsResetAt);
+        container.appendChild(timerDiv);
+    }
+
+    // Combine open jobs + in-progress (taken) jobs from recentJobs
+    const openJobs = (data.jobs || []).filter(j => !j.isCompleted && !j.isExpired);
+    const takenJobs = (data.recentJobs || []).filter(j => j.status === 'TAKEN');
+    // Mark taken jobs so we can distinguish them
+    for (const tj of takenJobs) {
+        tj._isTaken = true;
+    }
+    const availableJobs = [...openJobs, ...takenJobs];
+    if (availableJobs.length === 0) {
+        const noJobsDiv = document.createElement('div');
+        noJobsDiv.className = 'auto-jobs-no-jobs';
+        noJobsDiv.textContent = 'All jobs completed or expired.';
+        container.appendChild(noJobsDiv);
+        return;
+    }
+
+    // Group by job type (name)
+    const typeMap = {};
+    for (const job of availableJobs) {
+        const typeName = job.name || 'Unknown';
+        if (!typeMap[typeName]) typeMap[typeName] = [];
+        typeMap[typeName].push(job);
+    }
+
+    const checkboxes = [];
+
+    for (const [typeName, jobs] of Object.entries(typeMap)) {
+        const isSupported = SUPPORTED_JOB_TYPES.includes(typeName);
+        const row = document.createElement('div');
+        row.className = 'auto-jobs-type-row';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.dataset.jobType = typeName;
+        cb.dataset.market = marketKey;
+        cb.disabled = !isSupported;
+        if (isSupported && autoJobsSelectedTypes[marketKey] && autoJobsSelectedTypes[marketKey].includes(typeName)) {
+            cb.checked = true;
+        }
+        cb.addEventListener('change', () => {
+            updateAutoJobsSelectedTypes(marketKey, container);
+            updateSelectAllState(selectAllCb, checkboxes);
+        });
+
+        const label = document.createElement('span');
+        label.className = 'job-type-label';
+        label.textContent = typeName;
+
+        const takenCount = jobs.filter(j => j._isTaken).length;
+        const buggedCount = jobs.filter(j => isJobBugged(j)).length;
+        const count = document.createElement('span');
+        count.className = 'job-type-count';
+        let countText = `(${jobs.length}`;
+        if (takenCount > 0) countText += `, ${takenCount} in-progress`;
+        if (buggedCount > 0) countText += `, ${buggedCount} bugged`;
+        countText += ')';
+        count.textContent = countText;
+
+        row.appendChild(label);
+
+        if (!isSupported) {
+            const tooltip = document.createElement('span');
+            tooltip.className = 'unsupported-tooltip';
+            tooltip.textContent = 'Not supported';
+            tooltip.title = 'This job type is currently not supported';
+            row.appendChild(tooltip);
+        } else if (buggedCount > 0 && buggedCount === jobs.length) {
+            const tooltip = document.createElement('span');
+            tooltip.className = 'unsupported-tooltip';
+            tooltip.style.color = 'var(--accent-orange)';
+            tooltip.textContent = 'Bugged';
+            tooltip.title = 'Log jobs on D4RK RM7CE are bugged (logs tab unavailable)';
+            row.appendChild(tooltip);
+        }
+
+        row.appendChild(count);
+        row.appendChild(cb);
+
+        container.appendChild(row);
+        if (isSupported) checkboxes.push(cb);
+    }
+
+    // Select all checkbox
+    const selectAllDiv = document.createElement('div');
+    selectAllDiv.className = 'auto-jobs-select-all';
+    const selectAllCb = document.createElement('input');
+    selectAllCb.type = 'checkbox';
+    selectAllCb.id = 'selectAll_' + marketKey;
+    const selectAllLabel = document.createElement('label');
+    selectAllLabel.className = "job-type-label";
+    selectAllLabel.setAttribute('for', selectAllCb.id);
+    selectAllLabel.textContent = 'Select All';
+    const totalTaken = takenJobs.length;
+    const selectAllCount = document.createElement('span');
+    selectAllCount.className = 'job-type-count';
+    selectAllCount.textContent = totalTaken > 0 ? `(${availableJobs.length}, ${totalTaken} in-progress)` : `(${availableJobs.length})`;
+    selectAllDiv.appendChild(selectAllLabel);
+    selectAllDiv.appendChild(selectAllCount);
+    selectAllDiv.appendChild(selectAllCb);
+    container.appendChild(selectAllDiv);
+
+    // Wire select all
+    selectAllCb.addEventListener('change', () => {
+        const checked = selectAllCb.checked;
+        for (const cb of checkboxes) {
+            cb.checked = checked;
+        }
+        updateAutoJobsSelectedTypes(marketKey, container);
+    });
+
+    updateSelectAllState(selectAllCb, checkboxes);
+}
+
+function updateSelectAllState(selectAllCb, checkboxes) {
+    if (checkboxes.length === 0) {
+        selectAllCb.checked = false;
+        selectAllCb.indeterminate = false;
+        return;
+    }
+    const checkedCount = checkboxes.filter(cb => cb.checked).length;
+    selectAllCb.checked = checkedCount === checkboxes.length;
+    selectAllCb.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+}
+
+function updateAutoJobsSelectedTypes(marketKey, container) {
+    const cbs = container.querySelectorAll('input[type="checkbox"][data-job-type]');
+    autoJobsSelectedTypes[marketKey] = [];
+    cbs.forEach(cb => {
+        if (cb.checked) autoJobsSelectedTypes[marketKey].push(cb.dataset.jobType);
+    });
+    chrome.storage.sync.set({ autoJobsSelectedTypes });
+}
+
+// Restore selected types
+chrome.storage.sync.get('autoJobsSelectedTypes', (data) => {
+    if (data.autoJobsSelectedTypes) {
+        autoJobsSelectedTypes = data.autoJobsSelectedTypes;
+    }
+});
+
+// Refresh button
+refreshAutoJobsBtn.addEventListener('click', async () => {
+    autoJobsContentHome.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
+    autoJobsContentDark.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
+    autoJobsContentSoyuz.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
+    try {
+        const tab = await getCor3Tab();
+        if (tab) {
+            await chrome.tabs.sendMessage(tab.id, { action: "refreshAllMarketsSeq" });
+        }
+    } catch (e) {}
+    // Wait for sequential refresh completion signal via storage, with 30s fallback
+    await new Promise(r => {
+        let done = false;
+        const listener = (changes, area) => {
+            if (area === 'local' && changes._allMarketsRefreshed) {
+                done = true;
+                chrome.storage.onChanged.removeListener(listener);
+                clearTimeout(tmr);
+                r();
+            }
+        };
+        chrome.storage.onChanged.addListener(listener);
+        const tmr = setTimeout(() => { if (!done) { chrome.storage.onChanged.removeListener(listener); r(); } }, 30000);
+    });
+    renderAutoJobsTabs();
+});
+
+// Start/Stop button
+autoJobsStartBtn.addEventListener('click', async () => {
+    if (autoJobsRunning) {
+        // Stop
+        autoJobsRunning = false;
+        autoJobsStartBtn.textContent = '▶ Start Auto Jobs';
+        autoJobsStartBtn.className = 'auto-jobs-btn-start start';
+        addAutoJobLog('Auto Jobs stopped by user.', 'warn');
+        // Tell content script to stop
+        try {
+            const tab = await getCor3Tab();
+            if (tab) await chrome.tabs.sendMessage(tab.id, { action: "stopAutoJobs" });
+        } catch (e) {}
+        await chrome.storage.local.set({ autoJobsRunning: false });
+    } else {
+        // Immediately switch button to Stop so user gets instant feedback
+        autoJobsRunning = true;
+        autoJobsStartBtn.textContent = '■ Stop Auto Jobs';
+        autoJobsStartBtn.className = 'auto-jobs-btn-start stop';
+
+        // Collect selected jobs from all markets (using already-cached market data)
+        const { marketData, darkMarketData, soyuzMarketData } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+        const jobsToRun = [];
+
+        for (const marketKey of ['home', 'dark', 'soyuz']) {
+            const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+            if (!md) continue;
+            const selectedTypes = autoJobsSelectedTypes[marketKey] || [];
+            if (selectedTypes.length === 0) continue;
+
+            // Combine open + taken jobs
+            const openJobs = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && selectedTypes.includes(j.name));
+            const takenJobs = (md.recentJobs || []).filter(j => j.status === 'TAKEN' && selectedTypes.includes(j.name));
+
+            for (const job of openJobs) {
+                const serverName = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].serverName : 'None';
+                const serverId = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].id
+                    : (job.conditions && job.conditions.serverConfigId) ? job.conditions.serverConfigId : null;
+                jobsToRun.push({
+                    jobId: job.id,
+                    name: job.name,
+                    type: job.name,
+                    serverName: serverName,
+                    serverId: serverId,
+                    marketId: MARKET_IDS[marketKey],
+                    marketKey: marketKey,
+                    rewardCredits: job.rewardCredits,
+                    rewardReputation: job.rewardReputation,
+                    deposit: job.deposit || 0,
+                    conditions: job.conditions ? job.conditions.items || job.conditions : [],
+                    alreadyTaken: false,
+                    canComplete: false,
+                    status: 'pending'
+                });
+            }
+
+            for (const job of takenJobs) {
+                const serverName = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].serverName : 'None';
+                const serverId = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].id
+                    : (job.conditions && job.conditions.serverConfigId) ? job.conditions.serverConfigId : null;
+                jobsToRun.push({
+                    jobId: job.id,
+                    name: job.name,
+                    type: job.name,
+                    serverName: serverName,
+                    serverId: serverId,
+                    marketId: MARKET_IDS[marketKey],
+                    marketKey: marketKey,
+                    rewardCredits: job.rewardCredits,
+                    rewardReputation: job.rewardReputation,
+                    deposit: job.deposit || 0,
+                    conditions: job.conditions ? job.conditions.items || job.conditions : [],
+                    alreadyTaken: true,
+                    canComplete: !!job.canComplete,
+                    status: 'pending'
+                });
+            }
+        }
+
+        // Sort by server priority (furthest first), then job type priority
+        jobsToRun.sort((a, b) => {
+            const sp = getServerPriority(a.serverName) - getServerPriority(b.serverName);
+            if (sp !== 0) return sp;
+            return getJobTypePriority(a.type || a.name) - getJobTypePriority(b.type || b.name);
+        });
+
+        if (jobsToRun.length === 0) {
+            addAutoJobLog('No jobs selected or available to run.', 'warn');
+            autoJobsRunning = false;
+            autoJobsStartBtn.textContent = '▶ Start Auto Jobs';
+            autoJobsStartBtn.className = 'auto-jobs-btn-start start';
+            return;
+        }
+        // Merge with existing tracker: keep previously completed/failed jobs from other runs
+        const newJobIds = new Set(jobsToRun.map(j => j.jobId));
+        const previousJobs = autoJobsTracker.filter(j =>
+            !newJobIds.has(j.jobId) && (j.status === 'done' || j.status === 'failed')
+        );
+        autoJobsTracker = [...previousJobs, ...jobsToRun];
+        renderDebugJobs();
+        addAutoJobLog(`Starting auto jobs: ${jobsToRun.length} job(s) queued.`, 'info');
+
+        // Store running state, queue, and merged tracker
+        await chrome.storage.local.set({ autoJobsRunning: true, autoJobsQueue: jobsToRun, autoJobsTracker: autoJobsTracker });
+        try {
+            const tab = await getCor3Tab();
+            if (tab) {
+                await chrome.tabs.sendMessage(tab.id, {
+                    action: "startAutoJobs",
+                    jobs: jobsToRun
+                });
+            }
+        } catch (e) {
+            addAutoJobLog('Failed to send auto jobs to content script: ' + e.message, 'error');
+        }
+    }
+});
+
+// Debug console toggle — persisted across popup close/reopen
+chrome.storage.sync.get('autoJobsDebugConsoleEnabled', (data) => {
+    const enabled = !!data.autoJobsDebugConsoleEnabled;
+    autoJobsDebugToggle.checked = enabled;
+    autoJobsDebugConsole.style.display = enabled ? '' : 'none';
+    if (enabled) {
+        renderDebugJobs();
+        renderDebugLogs();
+    }
+});
+autoJobsDebugToggle.addEventListener('change', () => {
+    const enabled = autoJobsDebugToggle.checked;
+    chrome.storage.sync.set({ autoJobsDebugConsoleEnabled: enabled });
+    autoJobsDebugConsole.style.display = enabled ? '' : 'none';
+    if (enabled) {
+        renderDebugJobs();
+        renderDebugLogs();
+    }
+});
+
+// Debug console tabs
+debugTabJobs.addEventListener('click', () => {
+    debugTabJobs.classList.add('active');
+    debugTabLogs.classList.remove('active');
+    debugJobsBody.classList.add('active');
+    debugLogsBody.classList.remove('active');
+});
+debugTabLogs.addEventListener('click', () => {
+    debugTabLogs.classList.add('active');
+    debugTabJobs.classList.remove('active');
+    debugLogsBody.classList.add('active');
+    debugJobsBody.classList.remove('active');
+});
+
+// --- Auto Finish All Jobs ---
+// All scheduling is handled exclusively by background.js via chrome.alarms.
+// popup.js only toggles the setting and notifies background.
+chrome.storage.sync.get('autoFinishAllJobsEnabled', (data) => {
+    autoFinishAllActive = !!data.autoFinishAllJobsEnabled;
+    autoFinishAllJobsToggle.checked = autoFinishAllActive;
+});
+
+autoFinishAllJobsToggle.addEventListener('change', async () => {
+    autoFinishAllActive = autoFinishAllJobsToggle.checked;
+    await chrome.storage.sync.set({ autoFinishAllJobsEnabled: autoFinishAllActive });
+    if (autoFinishAllActive) {
+        addAutoJobLog('🔄 Auto Finish All Jobs enabled', 'info');
+    } else {
+        addAutoJobLog('🔄 Auto Finish All Jobs disabled', 'warn');
+    }
+    // Notify background to schedule/clear alarms
+    chrome.runtime.sendMessage({ action: "scheduleAutoFinishAll" }).catch(() => {});
+});
+
+// --- Auto Clear Generated IPs ---
+const autoClearIpsToggle = document.getElementById('autoClearIpsToggle');
+chrome.storage.sync.get('autoClearIpsEnabled', (data) => {
+    autoClearIpsToggle.checked = !!data.autoClearIpsEnabled;
+});
+
+autoClearIpsToggle.addEventListener('change', async () => {
+    const enabled = autoClearIpsToggle.checked;
+    await chrome.storage.sync.set({ autoClearIpsEnabled: enabled });
+    if (enabled) {
+        addAutoJobLog('🧹 Auto Clear Generated IPs enabled', 'info');
+    } else {
+        addAutoJobLog('🧹 Auto Clear Generated IPs disabled', 'warn');
+    }
+    chrome.runtime.sendMessage({ action: "scheduleAutoClearIps" }).catch(() => {});
+});
+
+// Collect all supported jobs WITHOUT filtering bugged ones (used to detect if only bugged remain)
+function collectAllSupportedJobsUnfiltered(marketData, darkMarketData, soyuzMarketData) {
+    const jobs = [];
+    for (const marketKey of ['dark', 'home', 'soyuz']) {
+        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+        if (!md) continue;
+        const openJobs = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && SUPPORTED_JOB_TYPES.includes(j.name));
+        const takenJobs = (md.recentJobs || []).filter(j => j.status === 'TAKEN' && SUPPORTED_JOB_TYPES.includes(j.name));
+        for (const j of [...openJobs, ...takenJobs]) {
+            const sn = (j.relatedServers && j.relatedServers[0]) ? j.relatedServers[0].serverName : 'None';
+            jobs.push({ name: j.name, type: j.name, serverName: sn, relatedServers: j.relatedServers });
+        }
+    }
+    return jobs;
+}
+
+function collectAllSupportedJobs(marketData, darkMarketData, soyuzMarketData) {
+    const jobsToRun = [];
+    // D4RK market first (higher priority), then SOYUZ
+    for (const marketKey of ['dark', 'home', 'soyuz']) {
+        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+        if (!md) continue;
+
+        const openJobs = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && SUPPORTED_JOB_TYPES.includes(j.name) && !isJobBugged(j));
+        const takenJobs = (md.recentJobs || []).filter(j => j.status === 'TAKEN' && SUPPORTED_JOB_TYPES.includes(j.name) && !isJobBugged(j));
+
+        for (const job of openJobs) {
+            const serverName = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].serverName : 'None';
+            const serverId = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].id
+                : (job.conditions && job.conditions.serverConfigId) ? job.conditions.serverConfigId : null;
+            jobsToRun.push({
+                jobId: job.id,
+                name: job.name,
+                type: job.name,
+                serverName: serverName,
+                serverId: serverId,
+                marketId: MARKET_IDS[marketKey],
+                marketKey: marketKey,
+                rewardCredits: job.rewardCredits,
+                rewardReputation: job.rewardReputation,
+                deposit: job.deposit || 0,
+                conditions: job.conditions ? job.conditions.items || job.conditions : [],
+                alreadyTaken: false,
+                canComplete: false,
+                status: 'pending'
+            });
+        }
+
+        for (const job of takenJobs) {
+            const serverName = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].serverName : 'None';
+            const serverId = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].id
+                : (job.conditions && job.conditions.serverConfigId) ? job.conditions.serverConfigId : null;
+            jobsToRun.push({
+                jobId: job.id,
+                name: job.name,
+                type: job.name,
+                serverName: serverName,
+                serverId: serverId,
+                marketId: MARKET_IDS[marketKey],
+                marketKey: marketKey,
+                rewardCredits: job.rewardCredits,
+                rewardReputation: job.rewardReputation,
+                deposit: job.deposit || 0,
+                conditions: job.conditions ? job.conditions.items || job.conditions : [],
+                alreadyTaken: true,
+                canComplete: !!job.canComplete,
+                status: 'pending'
+            });
+        }
+    }
+    // Sort by server priority (furthest first), then job type priority
+    jobsToRun.sort((a, b) => {
+        const sp = getServerPriority(a.serverName) - getServerPriority(b.serverName);
+        if (sp !== 0) return sp;
+        return getJobTypePriority(a.type || a.name) - getJobTypePriority(b.type || b.name);
+    });
+    return jobsToRun;
+}
+
+// runAutoFinishAll and scheduleAutoFinishAll are now handled exclusively by background.js
+// popup.js only renders the UI state based on storage changes
+
+// Add a log entry
+function addAutoJobLog(msg, level = 'info') {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    autoJobsDebugLogs.push({ time: timeStr, msg, level });
+    if (autoJobsDebugLogs.length > AUTO_JOBS_MAX_LOGS) {
+        autoJobsDebugLogs.shift();
+    }
+    renderDebugLogs();
+    // Persist logs
+    chrome.storage.local.set({ autoJobsDebugLogs });
+}
+
+function renderDebugLogs() {
+    if (autoJobsDebugLogs.length === 0) {
+        debugLogsBody.innerHTML = '<div style="color:var(--text-dim);">No logs yet.</div>';
+        return;
+    }
+    // Build off-screen to avoid flash/reflow
+    const frag = document.createDocumentFragment();
+    for (const log of autoJobsDebugLogs) {
+        const row = document.createElement('div');
+        let levelClass = '';
+        if (log.level === 'error') levelClass = ' log-error';
+        else if (log.level === 'success') levelClass = ' log-success';
+        else if (log.level === 'warn') levelClass = ' log-warn';
+        row.className = 'debug-log-row' + levelClass;
+        row.innerHTML = `<span class="log-time">[${log.time}]</span> ${log.msg}`;
+        frag.appendChild(row);
+    }
+    debugLogsBody.replaceChildren(frag);
+    debugLogsBody.scrollTop = debugLogsBody.scrollHeight;
+}
+
+let _renderDebugJobsId = 0;
+async function renderDebugJobs() {
+    const renderId = ++_renderDebugJobsId;
+
+    const storageData = await chrome.storage.local.get(['autoJobsCompletedResults', 'marketData', 'darkMarketData', 'soyuzMarketData', 'autoJobsTracker']);
+    if (renderId !== _renderDebugJobsId) return;
+
+    const { autoJobsCompletedResults, marketData, darkMarketData, soyuzMarketData } = storageData;
+
+    // Always use the freshest tracker from storage to avoid stale in-memory state
+    if (storageData.autoJobsTracker) {
+        autoJobsTracker = storageData.autoJobsTracker;
+    }
+
+    // Build indexes: completedResults (permanent record) and tracker (in-progress)
+    const completedMap = {};
+    if (autoJobsCompletedResults) {
+        for (const cj of autoJobsCompletedResults) {
+            completedMap[cj.jobId] = cj;
+        }
+    }
+    const trackerMap = {};
+    for (const tj of autoJobsTracker) {
+        trackerMap[tj.jobId] = tj;
+    }
+
+    // Unified render: for each market, merge all sources with deduplication.
+    // Priority: completedResults status > tracker status > market data status.
+    // All jobs stay in the list until market reset clears them.
+    const marketSources = [
+        { key: 'home', label: '🏠 HOME', data: marketData },
+        { key: 'dark', label: '🌑 D4RK', data: darkMarketData },
+        { key: 'soyuz', label: '<span style="color:#c33b3b;margin-left:2px;margin-right:3px">☭</span> SOYUZ', data: soyuzMarketData }
+    ];
+
+    let hasAny = false;
+    // Build all content off-screen in a fragment to avoid flash/reflow
+    const frag = document.createDocumentFragment();
+
+    for (const ms of marketSources) {
+        const allJobs = [];
+        const seenIds = new Set();
+
+        // Helper: resolve final status for a job.
+        // Priority: completedResults (permanent) > tracker (only non-pending) > fallback.
+        // 'done' in completedResults is IMMUTABLE until next reset.
+        // Tracker 'pending' means queued but not yet taken — show as 'open'.
+        function resolveStatus(jobId, fallbackStatus) {
+            const completed = completedMap[jobId];
+            if (completed) return { status: completed.status, reward: completed.reward, error: completed.error };
+            const tracked = trackerMap[jobId];
+            if (tracked && tracked.status && tracked.status !== 'pending') {
+                return { status: tracked.status, reward: tracked.reward || null, error: tracked.error || null };
+            }
+            return { status: fallbackStatus, reward: (tracked && tracked.reward) || null, error: (tracked && tracked.error) || null };
+        }
+
+        // 1. Market open jobs
+        if (ms.data && ms.data.jobs) {
+            for (const j of ms.data.jobs) {
+                if (j.isCompleted || j.isExpired) continue;
+                const sn = (j.relatedServers && j.relatedServers[0]) ? j.relatedServers[0].serverName : 'None';
+                const resolved = resolveStatus(j.id, 'open');
+                allJobs.push({ id: j.id, name: j.name, type: j.jobType || j.name, serverName: sn, status: resolved.status, reward: resolved.reward, error: resolved.error });
+                seenIds.add(j.id);
+            }
+        }
+
+        // 2. Taken/Completed jobs from recentJobs
+        if (ms.data && ms.data.recentJobs) {
+            for (const j of ms.data.recentJobs) {
+                if ((j.status !== 'TAKEN' && j.status !== 'COMPLETED') || seenIds.has(j.id)) continue;
+                const sn = (j.relatedServers && j.relatedServers[0]) ? j.relatedServers[0].serverName : 'None';
+                const marketStatus = j.status === 'COMPLETED' ? 'done' : 'in-progress';
+                const resolved = resolveStatus(j.id, marketStatus);
+                allJobs.push({ id: j.id, name: j.name, type: j.jobType || j.name, serverName: sn, status: resolved.status, reward: resolved.reward, error: resolved.error });
+                seenIds.add(j.id);
+            }
+        }
+
+        // 3. Tracker jobs not yet in market data (e.g. just taken, market not refreshed)
+        for (const tj of autoJobsTracker) {
+            if ((tj.marketKey || 'home') !== ms.key || seenIds.has(tj.jobId)) continue;
+            const resolved = resolveStatus(tj.jobId, tj.status === 'pending' ? 'open' : (tj.status || 'open'));
+            allJobs.push({ id: tj.jobId, name: tj.name, type: tj.type || tj.name, serverName: tj.serverName || 'None', status: resolved.status, reward: resolved.reward, error: resolved.error });
+            seenIds.add(tj.jobId);
+        }
+
+        // 4. Completed results not in market data or tracker (jobs that vanished from market)
+        if (autoJobsCompletedResults) {
+            for (const cj of autoJobsCompletedResults) {
+                if (cj.marketKey !== ms.key || seenIds.has(cj.jobId)) continue;
+                allJobs.push({
+                    id: cj.jobId, name: cj.name, type: cj.type || cj.name,
+                    serverName: cj.serverName || 'None',
+                    status: cj.status, reward: cj.reward, error: cj.error
+                });
+                seenIds.add(cj.jobId);
+            }
+        }
+
+        if (allJobs.length === 0) continue;
+        hasAny = true;
+
+        allJobs.sort((a, b) => {
+            const sp = getServerPriority(a.serverName) - getServerPriority(b.serverName);
+            if (sp !== 0) return sp;
+            return getJobTypePriority(a.type || a.name) - getJobTypePriority(b.type || b.name);
+        });
+
+        const group = document.createElement('div');
+        group.className = 'debug-market-group';
+        const title = document.createElement('div');
+        title.className = 'debug-market-group-title';
+        title.innerHTML = ms.label + ` (${allJobs.length})`;
+        group.appendChild(title);
+
+        for (const job of allJobs) {
+            group.appendChild(createDebugJobRow(job));
+        }
+        frag.appendChild(group);
+    }
+
+    if (!hasAny) {
+        const empty = document.createElement('div');
+        empty.style.color = 'var(--text-dim)';
+        empty.textContent = 'No job data yet.';
+        frag.appendChild(empty);
+    }
+    // Atomic swap — single reflow, no flash
+    debugJobsBody.replaceChildren(frag);
+}
+
+function createDebugJobRow(job) {
+    const row = document.createElement('div');
+    row.className = 'debug-job-row';
+
+    const statusEl = document.createElement('span');
+    let st = job.status || 'open';
+    if (st === 'open' && isJobBugged(job)) st = 'bugged';
+    statusEl.className = 'debug-job-status ' + st;
+    statusEl.textContent = st.toUpperCase();
+    if (job.error) {
+        statusEl.title = job.error;
+        statusEl.style.cursor = 'help';
+    }
+    row.appendChild(statusEl);
+
+    const info = document.createElement('span');
+    info.style.cssText = 'font-size:10px;color:var(--text-secondary);flex:1;';
+    info.textContent = `${job.name} — ${job.serverName}`;
+    row.appendChild(info);
+
+    if (job.reward) {
+        const rewardEl = document.createElement('span');
+        rewardEl.style.cssText = 'font-size:9px;color:var(--accent-green);white-space:nowrap;';
+        const dep = job.reward.deposit ? ` (-${job.reward.deposit})` : '';
+        rewardEl.textContent = `💰${job.reward.credits}${dep} ⭐${job.reward.reputation || 0} 🏅${job.reward.renown || 0}`;
+        row.appendChild(rewardEl);
+    }
+
+    return row;
+}
+
+// Listen for auto-job updates from content script via storage changes
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+
+    if (changes.autoJobsTracker) {
+        autoJobsTracker = changes.autoJobsTracker.newValue || [];
+        renderDebugJobs();
+    }
+
+    // Sync debug logs from storage (background.js writes directly to array)
+    if (changes.autoJobsDebugLogs) {
+        const newLogs = changes.autoJobsDebugLogs.newValue;
+        if (Array.isArray(newLogs)) {
+            autoJobsDebugLogs = newLogs;
+            renderDebugLogs();
+        }
+    }
+
+    if (changes.autoJobsRunning) {
+        const running = changes.autoJobsRunning.newValue;
+        autoJobsRunning = !!running;
+        if (autoJobsRunning) {
+            autoJobsStartBtn.textContent = '■ Stop Auto Jobs';
+            autoJobsStartBtn.className = 'auto-jobs-btn-start stop';
+        } else {
+            autoJobsStartBtn.textContent = '▶ Start Auto Jobs';
+            autoJobsStartBtn.className = 'auto-jobs-btn-start start';
+        }
+    }
+
+    // Re-render job tabs and debug jobs when market data changes
+    if (changes.marketData || changes.darkMarketData || changes.soyuzMarketData) {
+        // Clear completed results per-market BEFORE re-rendering when that market's jobs reset
+        const checkReset = (change) => {
+            if (!change) return false;
+            const oldReset = change.oldValue && change.oldValue.nextJobsResetAt;
+            const newReset = change.newValue && change.newValue.nextJobsResetAt;
+            return newReset && newReset !== oldReset;
+        };
+        const homeReset = checkReset(changes.marketData);
+        const darkReset = checkReset(changes.darkMarketData);
+        const soyuzReset = checkReset(changes.soyuzMarketData);
+        if (homeReset || darkReset || soyuzReset) {
+            // Clear old tracker/completed results synchronously first, then persist + render
+            autoJobsTracker = autoJobsTracker.filter(j => {
+                if (homeReset && (j.marketKey || 'home') === 'home') return false;
+                if (darkReset && j.marketKey === 'dark') return false;
+                if (soyuzReset && j.marketKey === 'soyuz') return false;
+                return true;
+            });
+            chrome.storage.local.get('autoJobsCompletedResults', (result) => {
+                let cr = Array.isArray(result.autoJobsCompletedResults) ? result.autoJobsCompletedResults : [];
+                if (homeReset) cr = cr.filter(j => j.marketKey !== 'home');
+                if (darkReset) cr = cr.filter(j => j.marketKey !== 'dark');
+                if (soyuzReset) cr = cr.filter(j => j.marketKey !== 'soyuz');
+                chrome.storage.local.set({ autoJobsCompletedResults: cr, autoJobsTracker: autoJobsTracker });
+                // Render after clearing so new data doesn't show stale DONE statuses
+                if (autoJobSolverToggle.checked) renderAutoJobsTabs();
+                if (autoJobsDebugToggle.checked) renderDebugJobs();
+            });
+        } else {
+            // No reset — just re-render with updated data
+            if (autoJobSolverToggle.checked) renderAutoJobsTabs();
+            if (autoJobsDebugToggle.checked) renderDebugJobs();
+        }
+    }
+
+    // Re-render debug jobs when completed results change
+    if (changes.autoJobsCompletedResults) {
+        if (autoJobsDebugToggle.checked) {
+            renderDebugJobs();
+        }
+    }
+});
+
+// Restore debug logs from storage on popup open
+chrome.storage.local.get(['autoJobsDebugLogs', 'autoJobsTracker', 'autoJobsRunning'], (data) => {
+    if (data.autoJobsDebugLogs) {
+        autoJobsDebugLogs = data.autoJobsDebugLogs;
+        renderDebugLogs();
+    }
+    if (data.autoJobsTracker) {
+        autoJobsTracker = data.autoJobsTracker;
+        renderDebugJobs();
+    }
+    if (data.autoJobsRunning) {
+        autoJobsRunning = true;
+        autoJobsStartBtn.textContent = '■ Stop Auto Jobs';
+        autoJobsStartBtn.className = 'auto-jobs-btn-start stop';
+    }
+});
