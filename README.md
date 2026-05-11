@@ -108,7 +108,7 @@ See the parent project https://github.com/Femtoce11/cor3-helper.
 
 ## Requirements
 
-- Firefox Developer Edition or Firefox Nightly
+- Firefox-based browser
 - An active [cor3.gg](https://cor3.gg) account
 
 ## License
