@@ -20,20 +20,20 @@
     var SOYUZ_MARKET_SERVER_ID = '019da6f1-16f7-75a6-b6d3-0b1d5f92a108';
 
     // Server priority order (furthest first)
-    var SERVER_PRIORITY = ['RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4L4', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
+    var SERVER_PRIORITY = ['SRM7-N3L2', 'SRM7-M', 'SRM7-N4L2', 'SRM7-N3L1', 'RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4L4', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
 
     // Job type priority (lower index = processed first per server)
-    // Transit-affecting jobs first, then simple jobs, then complex multi-step jobs
+    // Transit-affecting jobs last, simple first
     var JOB_TYPE_PRIORITY = [
+        'File Decryption',
+        'Log Deletion',
+        'File Elimination',
+        'Log Download',
+        'Data Download',
+        'Decrypt & Extract',
         'IP Injection',
         'IP Cleanup',
-        'Data Upload',
-        'Data Download',
-        'Log Deletion',
-        'Log Download',
-        'File Elimination',
-        'File Decryption',
-        'Decrypt & Extract'
+        'Data Upload'
     ];
 
     // Server connection tree — maps each server name to all server IDs on the path
@@ -93,6 +93,46 @@
             { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
             { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
             { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' }
+        ],
+        'SRM7-N3L1': [
+            { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' },
+            { name: 'RM7-N2ECP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a105' },
+            { name: 'RM7-N2L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a101' },
+            { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
+            { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
+            { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
+            { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' }
+        ],
+        'SRM7-N4L2': [
+            { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' },
+            { name: 'RM7-N2ECP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a105' },
+            { name: 'RM7-N2L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a101' },
+            { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
+            { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
+            { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
+            { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
+            { name: 'SRM7-N4L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a10a' }
+        ],
+        'SRM7-M': [
+            { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' },
+            { name: 'RM7-N2ECP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a105' },
+            { name: 'RM7-N2L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a101' },
+            { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
+            { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
+            { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
+            { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
+            { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' }
+        ],
+        'SRM7-N3L2': [
+            { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' },
+            { name: 'RM7-N2ECP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a105' },
+            { name: 'RM7-N2L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a101' },
+            { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
+            { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
+            { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
+            { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
+            { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' },
+            { name: 'SRM7-N3L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a109' }
         ]
     };
 
@@ -104,6 +144,7 @@
     }
 
     function getServerPriority(serverName) {
+        if (!serverName || serverName === 'None') return -1; // No-server jobs (e.g. File Decryption) always first
         var idx = SERVER_PRIORITY.indexOf(serverName);
         return idx >= 0 ? idx : SERVER_PRIORITY.length;
     }
@@ -137,7 +178,8 @@
                 jobId: j.jobId, name: j.name, type: j.type,
                 serverName: j.serverName, marketKey: j.marketKey,
                 status: j.status, reward: j.reward || null,
-                error: j.error || null, completedAt: Date.now()
+                error: j.error || null, completedAt: Date.now(),
+                maintenanceEndsAt: j.maintenanceEndsAt || null
             };
         });
         if (results.length > 0) {
@@ -218,6 +260,62 @@
             }
             check();
         });
+    }
+
+    async function waitForHackToBeDone() {
+        log('Hack minigame started, waiting for solver to complete...');
+        // Detect which hack minigame appeared to set appropriate timeout
+        var hackSolverTimeout = 60000; // default 60s for decrypt/simple-decrypt
+        var hackType = await detectHackType(5000);
+        if (hackType === 'ice-wall') {
+            hackSolverTimeout = 120000; // 2 minutes for ICE Wall
+            log('ICE Wall hack detected — waiting up to 2 minutes');
+        } else if (hackType) {
+            log(hackType + ' hack detected — waiting up to 60s');
+        } else {
+            log('Could not detect hack type — using default 60s timeout', 'warn');
+        }
+
+        // Wait for SAI update OR minigame close (whichever comes first)
+        // Only poll for minigame close if we confirmed the minigame rendered (hackType detected)
+        var saiUpdateReceived = false;
+        var canPollClose = !!hackType; // only poll DOM close if we saw it appear
+        try {
+            await new Promise(function (resolve, reject) {
+                var done = false;
+                // Listen for SAI update event
+                function onEvent(evt) {
+                    if (evt.data && evt.data.type === 'COR3_AUTOJOB_SAI_UPDATE') {
+                        if (!done) { done = true; window.removeEventListener('message', onEvent); clearInterval(pollTimer); clearTimeout(timeoutTimer); saiUpdateReceived = true; resolve(); }
+                    }
+                }
+                window.addEventListener('message', onEvent);
+                // Poll for minigame close (solver finished but SAI event missed)
+                // Only if we confirmed the minigame DOM appeared
+                var pollTimer = canPollClose ? setInterval(function () {
+                    if (!isHackMinigameOpen()) {
+                        if (!done) { done = true; window.removeEventListener('message', onEvent); clearInterval(pollTimer); clearTimeout(timeoutTimer); resolve(); }
+                    }
+                }, 500) : 0;
+                // Hard timeout
+                var timeoutTimer = setTimeout(function () {
+                    if (!done) { done = true; window.removeEventListener('message', onEvent); if (pollTimer) clearInterval(pollTimer); reject(new Error('timeout')); }
+                }, hackSolverTimeout);
+            });
+        } catch (e) {
+            log('Hack solver did not complete in ' + (hackSolverTimeout / 1000) + 's — checking login status directly', 'warn');
+        }
+        if (saiUpdateReceived) {
+            log('Hack completed (SAI update)', 'success');
+        } else if (canPollClose && !isHackMinigameOpen()) {
+            log('Hack completed (minigame closed)', 'success');
+        }
+
+        // Wait for minigame dialog to fully close before proceeding
+        if (isHackMinigameOpen()) {
+            log('Waiting for hack minigame dialog to close...');
+            await waitForHackMinigameClose(30000);
+        }
     }
 
     // Wait for a specific postMessage event type, with timeout
@@ -347,7 +445,7 @@
                 var intResult = await _sendSetEndpoint(intermediate.id);
                 if (intResult.unreachable) {
                     log('⚡ Path-through: ' + intermediate.name + ' also unreachable — maintenance?', 'warn');
-                    throw new Error('Path-through failed: ' + intermediate.name + ' unreachable');
+                    throw new Error('Path-through failed: ' + intermediate.name + ' unreachable (maintenance)');
                 }
                 await delay(humanDelay());
                 // Login/hack to this intermediate server
@@ -417,67 +515,45 @@
             try {
                 hackResult = await waitForEvent('COR3_AUTOJOB_SAI_HACK_START', 30000);
             } catch (e) {
+                // Hack start timed out — but the hack may have already completed.
+                // Check login status before giving up.
+                log('Hack start event timed out — checking if hack already completed...', 'warn');
+                sendCmd('get.login.status', { serverId: serverId });
+                try {
+                    var fallbackLogin = await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_STATUS', 10000);
+                    if (fallbackLogin.data && fallbackLogin.data.activeAccesses && fallbackLogin.data.activeAccesses.length > 0) {
+                        var fbAccessId = fallbackLogin.data.activeAccesses[0].id;
+                        log('Hack already completed (found active access after timeout) — logging in', 'success');
+                        sendCmd('login.with-access', { serverId: serverId, accessGrantId: fbAccessId });
+                        try { await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_RESULT', 10000); } catch (e2) { /* proceed */ }
+                        // Skip the rest of hack flow — we're logged in
+                        await delay(humanDelay());
+                        return;
+                    }
+                } catch (e2) { /* login status also failed */ }
                 throw new Error('Hack start timed out');
             }
             if (hackResult.error) {
+                // Hack error — but check login status in case we already have access
+                log('Hack returned error: ' + (hackResult.error.message || JSON.stringify(hackResult.error)) + ' — checking access...', 'warn');
+                sendCmd('get.login.status', { serverId: serverId });
+                try {
+                    var errLogin = await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_STATUS', 10000);
+                    if (errLogin.data && errLogin.data.activeAccesses && errLogin.data.activeAccesses.length > 0) {
+                        var errAccessId = errLogin.data.activeAccesses[0].id;
+                        log('Already have access despite hack error — logging in', 'success');
+                        sendCmd('login.with-access', { serverId: serverId, accessGrantId: errAccessId });
+                        try { await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_RESULT', 10000); } catch (e2) { /* proceed */ }
+                        await delay(humanDelay());
+                        return;
+                    }
+                } catch (e2) { /* login status also failed */ }
                 throw new Error('Hack failed: ' + (hackResult.error.message || JSON.stringify(hackResult.error)));
             }
-            log('Hack minigame started, waiting for solver to complete...');
+            await waitForHackToBeDone();
 
-            // Detect which hack minigame appeared to set appropriate timeout
-            var hackSolverTimeout = 30000; // default 30s for decrypt/simple
-            var hackType = await detectHackType(5000);
-            if (hackType === 'ice-wall') {
-                hackSolverTimeout = 120000; // 2 minutes for ICE Wall
-                log('ICE Wall hack detected — waiting up to 2 minutes');
-            } else if (hackType) {
-                log(hackType + ' hack detected');
-            } else {
-                log('Could not detect hack type — using default 30s timeout', 'warn');
-            }
-
-            // Wait for SAI update OR minigame close (whichever comes first)
-            // Only poll for minigame close if we confirmed the minigame rendered (hackType detected)
-            var saiUpdateReceived = false;
-            var canPollClose = !!hackType; // only poll DOM close if we saw it appear
-            try {
-                await new Promise(function (resolve, reject) {
-                    var done = false;
-                    // Listen for SAI update event
-                    function onEvent(evt) {
-                        if (evt.data && evt.data.type === 'COR3_AUTOJOB_SAI_UPDATE') {
-                            if (!done) { done = true; window.removeEventListener('message', onEvent); clearInterval(pollTimer); clearTimeout(timeoutTimer); saiUpdateReceived = true; resolve(); }
-                        }
-                    }
-                    window.addEventListener('message', onEvent);
-                    // Poll for minigame close (solver finished but SAI event missed)
-                    // Only if we confirmed the minigame DOM appeared
-                    var pollTimer = canPollClose ? setInterval(function () {
-                        if (!isHackMinigameOpen()) {
-                            if (!done) { done = true; window.removeEventListener('message', onEvent); clearInterval(pollTimer); clearTimeout(timeoutTimer); resolve(); }
-                        }
-                    }, 500) : 0;
-                    // Hard timeout
-                    var timeoutTimer = setTimeout(function () {
-                        if (!done) { done = true; window.removeEventListener('message', onEvent); if (pollTimer) clearInterval(pollTimer); reject(new Error('timeout')); }
-                    }, hackSolverTimeout);
-                });
-            } catch (e) {
-                log('Hack solver did not complete in ' + (hackSolverTimeout / 1000) + 's — checking login status directly', 'warn');
-            }
-            if (saiUpdateReceived) {
-                log('Hack completed (SAI update)', 'success');
-            } else if (canPollClose && !isHackMinigameOpen()) {
-                log('Hack completed (minigame closed)', 'success');
-            }
-
-            // Wait for minigame dialog to fully close before proceeding
-            if (isHackMinigameOpen()) {
-                log('Waiting for hack minigame dialog to close...');
-                await waitForHackMinigameClose(30000);
-            }
             await delay(humanDelay());
-            var maxRetries = 3;
+            var maxRetries = 5;
             var loggedIn = false;
             for (var attempt = 0; attempt < maxRetries; attempt++) {
                 sendCmd('get.login.status', { serverId: serverId });
@@ -498,7 +574,7 @@
                     break;
                 } else {
                     log('No active access after hack (attempt ' + (attempt + 1) + '/' + maxRetries + '), retrying...', 'warn');
-                    await delay(3000);
+                    await delay(5000);
                 }
             }
             if (!loggedIn) {
@@ -837,7 +913,9 @@
 
         // 5. Open file to trigger decrypt minigame
         ensureDecryptSolverEnabled();
-        log('Opening file: ' + targetFile.name + ' — decrypt solver will handle minigame');
+        ensureIceWallSolverEnabled();
+        ensureSimpleDecryptSolverEnabled();
+        log('Opening file: ' + targetFile.name);
         sendCmd('open.file', { fileId: targetFile.id });
 
         // Wait for minigame to start and auto-solver to complete
@@ -846,10 +924,7 @@
         } catch (e) {
             log('Minigame start not detected (solver may handle it directly)', 'warn');
         }
-
-        // Wait for the solver to finish (file gets decrypted -> market update)
-        log('Waiting for decrypt solver to complete...');
-        await delay(5000);
+        await waitForHackToBeDone();
 
         // 6. Refresh job list and complete
         var reward = await stepCompleteJob(job);
@@ -1061,13 +1136,14 @@
             var encFile = folderData.data.files.find(function (f) { return f.isNew; }) || folderData.data.files[folderData.data.files.length - 1];
             if (encFile) {
                 ensureDecryptSolverEnabled();
+                ensureIceWallSolverEnabled();
+                ensureSimpleDecryptSolverEnabled();
                 log('Opening file for decryption: ' + encFile.name);
                 sendCmd('open.file', { fileId: encFile.id });
                 try {
                     await waitForEvent('COR3_AUTOJOB_MINIGAME_START', 10000);
                 } catch (e) { /* solver may handle directly */ }
-                log('Waiting for decrypt solver...');
-                await delay(5000);
+                await waitForHackToBeDone();
 
                 // Try completing again
                 reward = await stepCompleteJob(job);
@@ -1333,6 +1409,8 @@
 
         // 8. Open file to trigger decrypt minigame
         ensureDecryptSolverEnabled();
+        ensureIceWallSolverEnabled();
+        ensureSimpleDecryptSolverEnabled();
         log('Opening file for decryption: ' + encFile.name);
         sendCmd('open.file', { fileId: encFile.id });
 
@@ -1341,9 +1419,7 @@
         } catch (e) {
             log('Minigame start not detected (solver may handle directly)', 'warn');
         }
-
-        log('Waiting for decrypt solver to complete...');
-        await delay(5000);
+        await waitForHackToBeDone();
 
         // 9. Complete job
         var reward = await stepCompleteJob(job);
@@ -1673,6 +1749,7 @@
                                     : mj.serverName + ' unreachable (' + srv.name + ' in maintenance)';
                                 mj.status = 'skipped';
                                 mj.error = mMsg + ' (~' + mMins + 'm remaining)';
+                                mj.maintenanceEndsAt = srvInfo.maintenanceEndsAt || null;
                                 log('⚠️ Skipping job: ' + mj.name + ' — ' + mMsg + ' (~' + mMins + 'm left)', 'warn');
                                 skippedCount++;
                                 break;
@@ -1764,6 +1841,7 @@
                         : job.serverName + ' unreachable (' + pathCheck.blockerName + ' in maintenance)';
                     job.status = 'skipped';
                     job.error = blockerMsg + ' (~' + mins + 'm remaining)';
+                    job.maintenanceEndsAt = pathCheck.endsAt || null;
                     log('⚠️ Skipping job: ' + job.name + ' — ' + blockerMsg + ' (~' + mins + 'm left)', 'warn');
                     updateTracker();
                     continue;
@@ -1792,9 +1870,17 @@
                     log('Job completion returned no reward: ' + job.name, 'warn');
                 }
             } catch (e) {
-                job.status = 'failed';
-                job.error = e.message;
-                log('❌ Job failed: ' + job.name + ' — ' + e.message, 'error');
+                // If failure is maintenance-related, mark as skipped so background.js can reschedule
+                if (e.message && (e.message.includes('maintenance') || e.message.includes('unreachable'))) {
+                    job.status = 'skipped';
+                    job.error = e.message;
+                    job.maintenanceEndsAt = null;
+                    log('⚠️ Job skipped (unreachable): ' + job.name + ' — ' + e.message, 'warn');
+                } else {
+                    job.status = 'failed';
+                    job.error = e.message;
+                    log('❌ Job failed: ' + job.name + ' — ' + e.message, 'error');
+                }
             }
 
             updateTracker();
@@ -1841,10 +1927,14 @@
                 status: j.status,
                 reward: j.reward || null,
                 error: j.error || null,
-                completedAt: Date.now()
+                completedAt: Date.now(),
+                maintenanceEndsAt: j.maintenanceEndsAt || null
             };
         });
         window.postMessage({ type: 'COR3_AUTOJOB_SAVE_COMPLETED', jobs: completedResults }, '*');
+
+        // Brief pause to let summary log persist before market refresh logs
+        await delay(500);
 
         // Refresh all markets sequentially at the end to ensure UI is fully updated
         log('Refreshing all markets sequentially...');

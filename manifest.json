@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "COR3 Helper",
-  "version": "1.4.1",
+  "version": "1.4.95",
   "description": "Monitor markets, expeditions, daily ops, and get timer alerts for cor3.gg.",
   "permissions": [
     "storage",
+    "scripting",
     "activeTab",
     "tabs",
     "alarms"
@@ -15,6 +16,7 @@
     "https://svc-corie.cor3.gg/*",
     "https://raw.githubusercontent.com/*"
   ],
+  "devtools_page": "devtools.html",
   "background": {
     "scripts": [
       "errors.js",

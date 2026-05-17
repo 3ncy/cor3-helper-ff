@@ -192,11 +192,11 @@ function collectJobsBg(marketData, darkMarketData, completedResults, serverMaint
     const JOB_TYPE_PRIORITY = ['IP Injection', 'IP Cleanup', 'Data Upload', 'Data Download', 'Log Deletion', 'Log Download', 'File Elimination', 'File Decryption', 'Decrypt & Extract'];
     const maint = serverMaintenanceMap || {};
     const now = Date.now();
-    // Build set of job IDs that already failed/bugged — skip them
+    // Build set of job IDs that already failed/bugged/skipped — skip them
     const skipIds = new Set();
     if (completedResults && completedResults.length > 0) {
         for (const cr of completedResults) {
-            if (cr.status === 'failed' || cr.status === 'bugged') {
+            if (cr.status === 'failed' || cr.status === 'bugged' || cr.status === 'skipped') {
                 skipIds.add(cr.jobId);
             }
         }
@@ -265,7 +265,10 @@ function collectJobsBg(marketData, darkMarketData, completedResults, serverMaint
     jobs.sort((a, b) => {
         const idxA = SERVER_PRIORITY.indexOf(a.serverName);
         const idxB = SERVER_PRIORITY.indexOf(b.serverName);
-        const sp = (idxA >= 0 ? idxA : SERVER_PRIORITY.length) - (idxB >= 0 ? idxB : SERVER_PRIORITY.length);
+        // No-server jobs (e.g. File Decryption, serverName='None') sort first (-1)
+        const spA = (a.serverName === 'None' || !a.serverName) ? -1 : (idxA >= 0 ? idxA : SERVER_PRIORITY.length);
+        const spB = (b.serverName === 'None' || !b.serverName) ? -1 : (idxB >= 0 ? idxB : SERVER_PRIORITY.length);
+        const sp = spA - spB;
         if (sp !== 0) return sp;
         const tpA = JOB_TYPE_PRIORITY.indexOf(a.name);
         const tpB = JOB_TYPE_PRIORITY.indexOf(b.name);
@@ -346,7 +349,7 @@ async function scheduleAutoFinishAllBg() {
         }
     }
 
-    // Maintenance end times for blocker servers on path to skipped jobs
+    // Maintenance end times for blocker servers on path to skipped jobs (from collectJobsBg path check)
     const skipped = availableNow._skippedMaintenance || [];
     if (skipped.length > 0) {
         const seenBlockerIds = new Set();
@@ -366,6 +369,35 @@ async function scheduleAutoFinishAllBg() {
             s.blockerName === s.serverName ? s.serverName : `${s.serverName} (blocked by ${s.blockerName})`
         ))].join(', ');
         bgAutoJobLog(`🔄 Auto Finish All: skipped jobs due to maintenance: ${blockedPairs}`, 'warn');
+    }
+
+    // Also check completedResults for previously skipped (maintenance) jobs — their
+    // maintenanceEndsAt may provide the best schedule time, especially when the
+    // serverMaintenanceMap is stale (maintenance discovered at runtime, not in map).
+    const skippedFromResults = (crSched || []).filter(cr => cr.status === 'skipped');
+    if (skippedFromResults.length > 0) {
+        let hasEndTimeInfo = false;
+        for (const sr of skippedFromResults) {
+            if (sr.maintenanceEndsAt) {
+                hasEndTimeInfo = true;
+                const diff = new Date(sr.maintenanceEndsAt).getTime() - now;
+                if (diff > 0 && diff < minWaitMs) {
+                    minWaitMs = diff;
+                    scheduledReason = `maintenance end (${sr.serverName || 'unknown server'})`;
+                } else if (diff <= 0 && minWaitMs === Infinity) {
+                    // Maintenance should have ended — retry soon
+                    minWaitMs = 30 * 1000; // 30 seconds
+                    scheduledReason = `maintenance ended (${sr.serverName || 'unknown server'}) — rechecking`;
+                }
+            }
+        }
+        // If skipped jobs exist but none have a known end time, use a 10-minute fallback
+        // to avoid infinite immediate retries
+        if (!hasEndTimeInfo && minWaitMs === Infinity) {
+            minWaitMs = 10 * 60 * 1000; // 10 minutes
+            scheduledReason = 'maintenance fallback (no end time known)';
+            bgAutoJobLog(`🔄 Auto Finish All: ${skippedFromResults.length} job(s) skipped (maintenance) with unknown end time — waiting 10m`, 'warn');
+        }
     }
 
     if (minWaitMs < Infinity) {
@@ -401,6 +433,14 @@ async function runAutoFinishAllBg() {
         await chrome.tabs.sendMessage(tab.id, { action: 'autoClearIpsCmd', cmd: 'get.map', data: {} });
     } catch (e) { /* best effort */ }
     await new Promise(r => setTimeout(r, 2000));
+
+    // Clear previously skipped (maintenance) jobs from completedResults so they can be retried.
+    // collectJobsBg will re-evaluate reachability using the freshly updated serverMaintenanceMap.
+    const { autoJobsCompletedResults: crPre } = await chrome.storage.local.get('autoJobsCompletedResults');
+    if (Array.isArray(crPre) && crPre.some(cr => cr.status === 'skipped')) {
+        const cleared = crPre.filter(cr => cr.status !== 'skipped');
+        await chrome.storage.local.set({ autoJobsCompletedResults: cleared });
+    }
 
     // Try up to 3 times with ~1 min intervals to find jobs after reset
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -509,6 +549,27 @@ async function runAutoFinishAllBg() {
         }
 
         if (attempt < 3) {
+            // Re-check updated job timers: if all markets now have future reset times,
+            // reschedule at the earliest reset instead of waiting 60s for another attempt
+            const { marketData: mdTimerCheck, darkMarketData: dmdTimerCheck, soyuzMarketData: smdTimerCheck } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+            const nowTimerCheck = Date.now();
+            let allFuture = true;
+            let earliestResetMs = Infinity;
+            for (const md of [mdTimerCheck, dmdTimerCheck, smdTimerCheck]) {
+                if (!md || !md.nextJobsResetAt) { allFuture = false; break; }
+                const resetMs = new Date(md.nextJobsResetAt).getTime();
+                if (resetMs <= nowTimerCheck) { allFuture = false; break; }
+                if (resetMs < earliestResetMs) earliestResetMs = resetMs;
+            }
+            if (allFuture && earliestResetMs < Infinity) {
+                // All markets have future timers — no point retrying, schedule at earliest reset
+                const waitMs = earliestResetMs - nowTimerCheck + 15000;
+                const mins = Math.max(waitMs / 60000, 0.25);
+                bgAutoJobLog(`🔄 Auto Finish All: all markets have future reset timers — scheduling next run in ${Math.floor(waitMs / 60000)}m ${Math.floor((waitMs % 60000) / 1000)}s`);
+                await chrome.alarms.create('autoFinishAllJobs', { delayInMinutes: mins });
+                return;
+            }
+
             bgAutoJobLog(`🔄 Auto Finish All: no jobs found yet, retrying in 60s (attempt ${attempt}/3)...`, 'warn');
             await new Promise(r => setTimeout(r, 60000));
             // Re-check if still enabled
@@ -524,6 +585,10 @@ async function runAutoFinishAllBg() {
 // --- Auto Clear Generated IPs (background) ---
 // Servers to clear IPs from (skip D4RK RM7CE — often in maintenance)
 const CLEAR_IP_SERVERS = [
+    { name: 'SRM7-N3L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a109' },
+    { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' },
+    { name: 'SRM7-N4L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a10a' },
+    { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
     { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
     { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
     { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
@@ -833,7 +898,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
             const newReset = change.newValue && change.newValue.nextJobsResetAt;
             return newReset && newReset !== oldReset;
         };
-        if (resetChanged(changes.marketData) || resetChanged(changes.darkMarketData) || resetChanged(changes.soyuzMarketData)) {
+        const homeReset = resetChanged(changes.marketData);
+        const darkReset = resetChanged(changes.darkMarketData);
+        const soyuzReset = resetChanged(changes.soyuzMarketData);
+        if (homeReset || darkReset || soyuzReset) {
+            // Clear old tracker/completedResults for reset markets (works even when popup is closed)
+            chrome.storage.local.get(['autoJobsTracker', 'autoJobsCompletedResults'], (result) => {
+                let tracker = Array.isArray(result.autoJobsTracker) ? result.autoJobsTracker : [];
+                let cr = Array.isArray(result.autoJobsCompletedResults) ? result.autoJobsCompletedResults : [];
+                if (homeReset) {
+                    tracker = tracker.filter(j => (j.marketKey || 'home') !== 'home');
+                    cr = cr.filter(j => j.marketKey !== 'home');
+                }
+                if (darkReset) {
+                    tracker = tracker.filter(j => j.marketKey !== 'dark');
+                    cr = cr.filter(j => j.marketKey !== 'dark');
+                }
+                if (soyuzReset) {
+                    tracker = tracker.filter(j => j.marketKey !== 'soyuz');
+                    cr = cr.filter(j => j.marketKey !== 'soyuz');
+                }
+                chrome.storage.local.set({ autoJobsTracker: tracker, autoJobsCompletedResults: cr });
+            });
             chrome.storage.sync.get('autoFinishAllJobsEnabled', (data) => {
                 if (data.autoFinishAllJobsEnabled) scheduleAutoFinishAllBgDebounced();
             });
