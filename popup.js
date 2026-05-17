@@ -2521,7 +2521,7 @@ async function autoCheckWebsiteUpdated() {
     const patchVersionData = document.getElementById('patchVersionData');
     if (!webVersionNotice || !webVersionData || !systemVersionNotice || !systemVersionData) return;
     try {
-        const resp = await fetch('https://raw.githubusercontent.com/Femtoce11/cor3-helper/main/versions.json', { cache: 'no-store' });
+        const resp = await fetch('https://raw.githubusercontent.com/3ncy/cor3-helper-ff/refs/heads/main/versions.json', { cache: 'no-store' });
         if (!resp.ok) return;
         const remote = await resp.json();
         const { webVersion, systemVersion, patchVersion } = await chrome.storage.local.get(['webVersion', 'systemVersion', 'patchVersion']);
