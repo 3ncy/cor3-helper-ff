@@ -2218,13 +2218,6 @@ var webVersion = null;
             else if (cmd === 'file.upload') window.__cor3AutoJobFileUpload(d.serverId, d.name, d.sizeMb);
             else if (cmd === 'transit.remove') window.__cor3AutoJobTransitRemove(d.serverId, d.ip);
         }
-        // --- DevTools panel: send raw WS message ---
-        if (event.data && event.data.type === 'COR3_DEVTOOLS_WS_SEND') {
-            var msg = event.data.message;
-            if (msg && typeof msg === 'string') {
-                wsSendRaw(msg);
-            }
-        }
     });
 
     // Re-post version data after content.js is loaded (document_idle).

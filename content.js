@@ -1140,10 +1140,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Relay auto-clear-ips WS commands to MAIN world
         window.postMessage({ type: 'COR3_AUTOJOB_CMD', cmd: request.cmd, data: request.data || {} }, '*');
         sendResponse({ success: true });
-    } else if (request.action === "devtoolsSendWs") {
-        // DevTools panel: send a raw WS message via the intercepted socket
-        window.postMessage({ type: 'COR3_DEVTOOLS_WS_SEND', message: request.message }, '*');
-        sendResponse({ success: true });
     }
 });
 

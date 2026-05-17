@@ -16,7 +16,6 @@
     "https://svc-corie.cor3.gg/*",
     "https://raw.githubusercontent.com/*"
   ],
-  "devtools_page": "devtools.html",
   "background": {
     "scripts": [
       "errors.js",
