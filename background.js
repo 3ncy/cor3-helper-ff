@@ -587,6 +587,10 @@ async function runAutoFinishAllBg() {
 // --- Auto Clear Generated IPs (background) ---
 // Servers to clear IPs from (skip D4RK RM7CE — often in maintenance)
 const CLEAR_IP_SERVERS = [
+    { name: 'SRM7-N3L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a109' },
+    { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' },
+    { name: 'SRM7-N4L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a10a' },
+    { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
     { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
     { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
     { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },

@@ -4,6 +4,7 @@
     'use strict';
 
     const SERVER_ID_MAP = {
+        '019c0a5b-eeeb-7d3e-b9c9-fd5c2ba7d399': 'HOME',
         '019d1b0a-13a9-77dd-b41f-33f06f2df284': 'RM7-E1L3',
         '019d1b0a-13a9-77dd-b41f-374ee144bd07': 'RM7-E1L5',
         '019d1b0a-13a9-77dd-b41f-3a21d490cb2d': 'RM7-E1SCP',
@@ -15,10 +16,15 @@
         '019da6f1-16f7-75a6-b6d3-0b1d5f92a105': 'RM7-N2ECP',
         '019da6f1-16f7-75a6-b6d3-0b1d5f92a101': 'RM7-N2L2',
         '019da6f1-16f7-75a6-b6d3-0b1d5f92a102': 'RM7-N2L3',
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a106': 'RM7-W3NCP',
         '019da6f1-16f7-75a6-b6d3-0b1d5f92a103': 'RM7-W3L2',
         '019da6f1-16f7-75a6-b6d3-0b1d5f92a104': 'RM7-N1L1',
-        '019da6f1-16f7-75a6-b6d3-0b1d5f92a106': 'RM7-W3NCP',
-        '019da6f1-16f7-75a6-b6d3-0b1d5f92a108': 'SRM7-M'
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a107': 'SRM7-N3L1',
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a10a': 'SRM7-N4L2',
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a10b': 'SPRM7-N4L3',
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a108': 'SRM7-M',
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a109': 'SRM7-N3L2',
+        '019da6f1-16f7-75a6-b6d3-0b1d5f92a10c': 'SRRM7'
     };
     const MARKET_ID_MAP = {
         '019d3ea4-85bd-7389-904d-8f7c85841134': 'HOME',

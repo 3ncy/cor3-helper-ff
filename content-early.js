@@ -70,7 +70,9 @@ var webVersion = null;
                     }
                     if (authVal && authVal.startsWith('Bearer ')) {
                         capturedBearerToken = authVal;
-                        window.postMessage({ type: 'COR3_BEARER_TOKEN', token: authVal }, '*');
+                        setTimeout(function () {
+                            window.postMessage({ type: 'COR3_BEARER_TOKEN', token: authVal }, '*');
+                        }, 200);
                     }
                 }
             }
@@ -83,7 +85,9 @@ var webVersion = null;
                     }
                     console.log('[COR3 Helper] Captured web version from translation.json:', webVersion);
                     window.__cor3WebVersion = webVersion;
-                    window.postMessage({ type: 'COR3_WEB_VERSION', version: webVersion }, '*');
+                    setTimeout(function () {
+                        window.postMessage({ type: 'COR3_WEB_VERSION', version: webVersion }, '*');
+                    }, 250);
                 } catch (e) {
                     console.log('[COR3 Helper] Error parsing version:', e);
                 }
@@ -112,9 +116,6 @@ var webVersion = null;
                                 console.log('[COR3 Helper] Captured system version from api/users/me:', data.systemVersion);
                                 window.__cor3SystemVersion = data.systemVersion;
                                 window.postMessage({ type: 'COR3_SYSTEM_VERSION', version: data.systemVersion }, '*');
-                                if (webVersion) {
-                                    window.postMessage({ type: 'COR3_WEB_VERSION', version: webVersion }, '*');
-                                }
                             }
                         }).catch(function () {});
                     }
