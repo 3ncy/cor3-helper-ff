@@ -592,6 +592,8 @@
                 hlog('✅ Daily hack completed successfully!', 'success');
                 // Auto-disable toggle after success
                 window.postMessage({ type: 'COR3_DAILY_HACK_DISABLE_TOGGLE' }, '*');
+                // Refresh daily ops data so UI reflects completion
+                window.postMessage({ type: 'COR3_FETCH_DAILY_OPS' }, '*');
                 cleanup();
                 return;
             }

@@ -584,7 +584,7 @@ async function runAutoFinishAllBg() {
     scheduleAutoFinishAllBg();
 }
 
-// --- Auto Clear Generated IPs (background) ---
+// --- Auto Clear IPs (background) ---
 // Servers to clear IPs from (skip D4RK RM7CE — often in maintenance)
 const CLEAR_IP_SERVERS = [
     { name: 'SRM7-N3L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a109' },
@@ -601,8 +601,17 @@ const CLEAR_IP_SERVERS = [
     { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
     { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' }
 ];
-const GENERATED_IP_PREFIXES = ['10.', '172.', '192.', '198.'];
+const IP_PREFIXES = ['10.', '172.', '192.', '198.'];
 const MAX_IPS_TO_KEEP = 10;
+const BG_ERROR_MAP = {
+    'sai-hack-impossible': 'Not enough hack power',
+    'sai-no-hack-software': 'No hacking software',
+    'no-path-to-server': 'No path to server (unreachable)',
+    'server-in-maintenance': 'Server is in maintenance',
+    'invalid-access-token': 'Access token expired or invalid',
+    'token-expired': 'Session token expired'
+};
+function bgFriendlyError(msg) { return (msg && BG_ERROR_MAP[msg]) || msg || 'Unknown error'; }
 const CLEAR_IPS_INTERVAL_MINUTES = 180; // 3 hours
 
 // Helper: send a WS command via content.js and wait for a storage-relayed response
@@ -653,7 +662,7 @@ async function clearIpsLoginToServer(tab, server) {
         throw new Error('Login status timeout');
     }
     if (loginStatus.error) {
-        throw new Error('Login status error: ' + JSON.stringify(loginStatus.error));
+        throw new Error('Login status error: ' + bgFriendlyError(loginStatus.error.message));
     }
 
     const data = loginStatus.data;
@@ -687,16 +696,25 @@ async function clearIpsLoginToServer(tab, server) {
             throw new Error('Hack start timeout');
         }
         if (hackResult.error) {
-            throw new Error('Hack failed: ' + (hackResult.error.message || JSON.stringify(hackResult.error)));
+            throw new Error('Hack failed: ' + bgFriendlyError(hackResult.error.message));
         }
-        // Hack minigame started — wait for SAI update (solver completes hack)
+        // Hack minigame started — wait for SAI update + minigame close via content.js DOM polling
         bgAutoJobLog(`🧹 ${server.name}: hack started, waiting for solver...`);
+        await chrome.storage.local.remove('_clearIpsHackDone');
+        chrome.tabs.sendMessage(tab.id, { action: 'waitForHackDone', timeoutMs: 120000 }).catch(() => {});
         try {
             await waitForClearIpsEvent('_clearIpsSaiUpdate', 120000);
             bgAutoJobLog(`🧹 ${server.name}: hack completed (SAI update received)`);
         } catch (e) {
             bgAutoJobLog(`🧹 ${server.name}: SAI update timeout — checking login status`, 'warn');
         }
+        // Wait for minigame dialog to fully close before proceeding
+        try {
+            const hackDone = await waitForClearIpsEvent('_clearIpsHackDone', 30000);
+            if (hackDone.done) {
+                bgAutoJobLog(`🧹 ${server.name}: minigame closed`);
+            }
+        } catch (e) { /* already timed out, proceed */ }
         await new Promise(r => setTimeout(r, 1000));
 
         // After hack, get login status again and use access
@@ -808,19 +826,25 @@ async function runAutoClearIpsBg() {
                 bgAutoJobLog(`🧹 ${server.name}: unexpected transit data format — skipping`, 'warn');
                 continue;
             }
-            const generatedIps = allIps.filter(ip => {
+            const filteredIps = allIps.filter(ip => {
                 const addr = ip.ip || '';
-                return GENERATED_IP_PREFIXES.some(p => addr.startsWith(p));
+                return IP_PREFIXES.some(p => addr.startsWith(p));
             });
 
-            if (generatedIps.length <= MAX_IPS_TO_KEEP) {
-                bgAutoJobLog(`🧹 ${server.name}: ${generatedIps.length} IPs (≤${MAX_IPS_TO_KEEP}) — OK`);
+            if (filteredIps.length <= MAX_IPS_TO_KEEP) {
+                bgAutoJobLog(`🧹 ${server.name}: ${filteredIps.length} IPs (≤${MAX_IPS_TO_KEEP}) — OK`);
                 continue;
             }
 
-            // 5. Delete excess IPs (keep last MAX_IPS_TO_KEEP, delete from start)
-            const toDelete = generatedIps.slice(0, generatedIps.length - MAX_IPS_TO_KEEP);
-            bgAutoJobLog(`🧹 ${server.name}: ${generatedIps.length} IPs — deleting ${toDelete.length} excess`);
+            // 5. Delete excess IPs — priority: job > user > generated (delete job IPs first)
+            const SOURCE_PRIORITY = { job: 0, user: 1, generated: 2 };
+            const sorted = filteredIps.slice().sort((a, b) => {
+                const pa = SOURCE_PRIORITY[a.source] ?? 1;
+                const pb = SOURCE_PRIORITY[b.source] ?? 1;
+                return pa - pb;
+            });
+            const toDelete = sorted.slice(0, sorted.length - MAX_IPS_TO_KEEP);
+            bgAutoJobLog(`🧹 ${server.name}: ${filteredIps.length} IPs — deleting ${toDelete.length} excess (order: job→user→generated)`);
 
             for (let i = 0; i < toDelete.length; i++) {
                 const ip = toDelete[i];
@@ -860,7 +884,7 @@ async function runAutoClearIpsBg() {
     // Cleanup temp storage keys
     await chrome.storage.local.remove([
         '_clearIpsTransit', '_clearIpsTransitRemove', '_clearIpsEndpoint',
-        '_clearIpsLoginStatus', '_clearIpsLoginResult', '_clearIpsHackStart', '_clearIpsSaiUpdate'
+        '_clearIpsLoginStatus', '_clearIpsLoginResult', '_clearIpsHackStart', '_clearIpsSaiUpdate', '_clearIpsHackDone'
     ]);
 
     // Schedule next run

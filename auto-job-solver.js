@@ -10,6 +10,17 @@
     let running = false;
     let abortFlag = false;
     let currentJobIndex = -1;
+    let tokenExpired = false;
+
+    window.addEventListener('message', function (evt) {
+        if (evt.data && evt.data.type === 'COR3_TOKEN_EXPIRED') {
+            tokenExpired = true;
+            if (running) {
+                abortFlag = true;
+                log('⚠️ Session token expired — aborting auto jobs (will reconnect)', 'warn');
+            }
+        }
+    });
 
     // Known download folder IDs (desktop) — discovered at runtime
     let downloadFolderId = null;
@@ -152,6 +163,16 @@
     function getJobTypePriority(typeName) {
         var idx = JOB_TYPE_PRIORITY.indexOf(typeName);
         return idx >= 0 ? idx : JOB_TYPE_PRIORITY.length;
+    }
+
+    var MARKET_DISPLAY_NAMES = { home: 'HOME', dark: 'D4RK', soyuz: 'SOYUZ' };
+    var MARKET_ID_TO_NAME = {
+        '019d3ea4-85bd-7389-904d-8f7c85841134': 'HOME',
+        '019d3ea4-85bd-7389-904d-908ba9194aa0': 'D4RK',
+        '019da731-2db5-7d76-9447-1ea3b9b78001': 'SOYUZ'
+    };
+    function getMarketNameById(marketId) {
+        return MARKET_ID_TO_NAME[marketId] || marketId;
     }
 
     function humanDelay() {
@@ -369,6 +390,39 @@
         return { blocked: false };
     }
 
+    // Human-friendly error message mappings for common server errors
+    var ERROR_MAP = {
+        'sai-transit-ip-duplicate': 'IP already exists on server',
+        'sai-transit-ip-limit': 'Server IP limit reached',
+        'no-path-to-server': 'No path to server (unreachable)',
+        'server-in-maintenance': 'Server is in maintenance',
+        'sai-missing-software': 'Missing required software',
+        'missing-software': 'Missing required software',
+        'sai-hack-impossible': 'Not enough hack power',
+        'sai-no-hack-software': 'No hacking software',
+        'cannot-read-sai-file': 'Cannot read SAI file',
+        'invalid-access-token': 'Access token expired or invalid',
+        'token-expired': 'Session token expired',
+        'job-already-taken': 'Job already taken by another player',
+        'job-not-found': 'Job no longer available',
+        'job-expired': 'Job has expired',
+        'job-conditions-not-met': 'Job conditions not met',
+        'sai-file-not-found': 'File not found on server',
+        'sai-log-not-found': 'Log not found on server',
+        'sai-access-denied': 'Access denied to server',
+        'rate-limited': 'Rate limited — too many requests',
+        'file-not-found': 'File not found on server/folder',
+        'market-not-reachable': 'Market not reachable'
+    };
+    function friendlyError(errMsg, failedConditions) {
+        if (!errMsg) return 'Unknown error';
+        var friendly = ERROR_MAP[errMsg] || errMsg;
+        if (failedConditions && Array.isArray(failedConditions) && failedConditions.length > 0) {
+            friendly += ' (' + failedConditions.join(', ') + ')';
+        }
+        return friendly;
+    }
+
     // ---- Job Type Handlers ----
 
     // Reverse lookup: find server name from server ID using SERVER_PATH_MAP
@@ -428,14 +482,20 @@
 
     // Step: Set endpoint to target server, with path-through hack on failure
     async function stepSetEndpoint(serverId) {
-        log('Setting endpoint to server ' + serverId);
+        var endpointLabel = getServerNameById(serverId) || serverId;
+        log('Setting endpoint to ' + endpointLabel);
         var raceResult = await _sendSetEndpoint(serverId);
 
         if (raceResult.unreachable) {
             // Try path-through: hack intermediate servers on the path
             var path = getPathForServerId(serverId);
             if (!path || path.length <= 1) {
-                throw new Error('Server unreachable (no path to server) — may be in maintenance');
+                var noPathCheck = await checkPathMaintenance(endpointLabel);
+                if (noPathCheck.blocked) {
+                    var nMins = Math.ceil(noPathCheck.remainingMs / 60000);
+                    throw new Error(endpointLabel + ' unreachable (' + noPathCheck.blockerName + ' in maintenance, ~' + nMins + 'm remaining)');
+                }
+                throw new Error(endpointLabel + ' unreachable (no path to server)');
             }
             log('⚡ Server unreachable — attempting path-through hack (' + path.length + ' servers on path)');
             // Walk through each intermediate server (excluding the target itself which is the last)
@@ -444,8 +504,14 @@
                 log('⚡ Path-through: setting endpoint to ' + intermediate.name + ' (' + (pi + 1) + '/' + (path.length - 1) + ')');
                 var intResult = await _sendSetEndpoint(intermediate.id);
                 if (intResult.unreachable) {
-                    log('⚡ Path-through: ' + intermediate.name + ' also unreachable — maintenance?', 'warn');
-                    throw new Error('Path-through failed: ' + intermediate.name + ' unreachable (maintenance)');
+                    var intCheck = await checkPathMaintenance(intermediate.name);
+                    var intMsg = intermediate.name + ' unreachable';
+                    if (intCheck.blocked) {
+                        var iMins = Math.ceil(intCheck.remainingMs / 60000);
+                        intMsg += ' (' + intCheck.blockerName + ' in maintenance, ~' + iMins + 'm remaining)';
+                    }
+                    log('⚡ Path-through: ' + intMsg, 'warn');
+                    throw new Error('Path-through failed: ' + intMsg);
                 }
                 await delay(humanDelay());
                 // Login/hack to this intermediate server
@@ -461,7 +527,12 @@
             log('⚡ Path-through complete — retrying endpoint to target server');
             raceResult = await _sendSetEndpoint(serverId);
             if (raceResult.unreachable) {
-                throw new Error('Server still unreachable after path-through hack');
+                var finalCheck = await checkPathMaintenance(endpointLabel);
+                if (finalCheck.blocked) {
+                    var fMins = Math.ceil(finalCheck.remainingMs / 60000);
+                    throw new Error(endpointLabel + ' still unreachable after path-through (' + finalCheck.blockerName + ' in maintenance, ~' + fMins + 'm remaining)');
+                }
+                throw new Error(endpointLabel + ' still unreachable after path-through hack');
             }
         }
 
@@ -473,7 +544,8 @@
 
     // Step: Login to server (use existing access or hack)
     async function stepLogin(serverId) {
-        log('Checking login status for server ' + serverId);
+        var serverLabel = getServerNameById(serverId) || serverId;
+        log('Checking login status for ' + serverLabel);
         sendCmd('get.login.status', { serverId: serverId });
         var loginData;
         try {
@@ -483,14 +555,16 @@
         }
 
         if (loginData.error) {
-            throw new Error('Login status error: ' + JSON.stringify(loginData.error));
+            throw new Error('Login status error: ' + friendlyError(loginData.error.message || JSON.stringify(loginData.error)));
         }
 
         var data = loginData.data;
         // Check for active access
         if (data && data.activeAccesses && data.activeAccesses.length > 0) {
-            var accessId = data.activeAccesses[0].id;
-            log('Using existing access: ' + accessId);
+            var accessObj = data.activeAccesses[0];
+            var accessId = accessObj.id;
+            var accessType = accessObj.accessType || accessObj.type || 'unknown';
+            log('Using existing access on ' + serverLabel + ' (' + accessType + ')');
             sendCmd('login.with-access', { serverId: serverId, accessGrantId: accessId });
             var loginResult;
             try {
@@ -501,11 +575,11 @@
             if (loginResult.error || !(loginResult.data && loginResult.data.success)) {
                 throw new Error('Login with access failed');
             }
-            log('Logged in via existing access', 'success');
+            log('Logged in via existing access to ' + serverLabel, 'success');
         } else {
             // Need to hack — enable all solvers BEFORE starting hack so they're
             // ready when the minigame appears (it can start instantly)
-            log('No active access — starting hack');
+            log('No active access to ' + serverLabel + ' — starting hack');
             ensureDecryptSolverEnabled();
             ensureIceWallSolverEnabled();
             ensureSimpleDecryptSolverEnabled();
@@ -522,8 +596,10 @@
                 try {
                     var fallbackLogin = await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_STATUS', 10000);
                     if (fallbackLogin.data && fallbackLogin.data.activeAccesses && fallbackLogin.data.activeAccesses.length > 0) {
-                        var fbAccessId = fallbackLogin.data.activeAccesses[0].id;
-                        log('Hack already completed (found active access after timeout) — logging in', 'success');
+                        var fbAccess = fallbackLogin.data.activeAccesses[0];
+                        var fbAccessId = fbAccess.id;
+                        var fbType = fbAccess.accessType || fbAccess.type || 'unknown';
+                        log('Hack already completed (found ' + fbType + ' access after timeout) — logging in', 'success');
                         sendCmd('login.with-access', { serverId: serverId, accessGrantId: fbAccessId });
                         try { await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_RESULT', 10000); } catch (e2) { /* proceed */ }
                         // Skip the rest of hack flow — we're logged in
@@ -534,23 +610,28 @@
                 throw new Error('Hack start timed out');
             }
             if (hackResult.error) {
-                // Hack error — but check login status in case we already have access
-                log('Hack returned error: ' + (hackResult.error.message || JSON.stringify(hackResult.error)) + ' — checking access...', 'warn');
+                log('Hack returned error: ' + friendlyError(hackResult.error.message || JSON.stringify(hackResult.error)) + ' — checking access...', 'warn');
                 sendCmd('get.login.status', { serverId: serverId });
                 try {
                     var errLogin = await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_STATUS', 10000);
                     if (errLogin.data && errLogin.data.activeAccesses && errLogin.data.activeAccesses.length > 0) {
-                        var errAccessId = errLogin.data.activeAccesses[0].id;
-                        log('Already have access despite hack error — logging in', 'success');
+                        var errAccess = errLogin.data.activeAccesses[0];
+                        var errAccessId = errAccess.id;
+                        var errType = errAccess.accessType || errAccess.type || 'unknown';
+                        log('Already have ' + errType + ' access despite hack error — logging in', 'success');
                         sendCmd('login.with-access', { serverId: serverId, accessGrantId: errAccessId });
                         try { await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_RESULT', 10000); } catch (e2) { /* proceed */ }
                         await delay(humanDelay());
                         return;
                     }
                 } catch (e2) { /* login status also failed */ }
-                throw new Error('Hack failed: ' + (hackResult.error.message || JSON.stringify(hackResult.error)));
+                throw new Error('Hack failed: ' + friendlyError(hackResult.error.message || JSON.stringify(hackResult.error)));
             }
-            await waitForHackToBeDone();
+            if (hackResult.data && hackResult.data.autoHacked) {
+                log('Server auto-hacked (no minigame) — skipping solver wait', 'success');
+            } else {
+                await waitForHackToBeDone();
+            }
 
             await delay(humanDelay());
             var maxRetries = 5;
@@ -564,13 +645,15 @@
                     continue;
                 }
                 if (loginData.data && loginData.data.activeAccesses && loginData.data.activeAccesses.length > 0) {
-                    var aid = loginData.data.activeAccesses[0].id;
+                    var postHackAccess = loginData.data.activeAccesses[0];
+                    var aid = postHackAccess.id;
+                    var postHackType = postHackAccess.accessType || postHackAccess.type || 'unknown';
                     sendCmd('login.with-access', { serverId: serverId, accessGrantId: aid });
                     try {
                         await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_RESULT', 10000);
                     } catch (e) { /* proceed anyway */ }
                     loggedIn = true;
-                    if (!saiUpdateReceived) log('Hack completed (confirmed via login status)', 'success');
+                    log('Logged in to ' + serverLabel + ' (' + postHackType + ')', 'success');
                     break;
                 } else {
                     log('No active access after hack (attempt ' + (attempt + 1) + '/' + maxRetries + '), retrying...', 'warn');
@@ -592,7 +675,7 @@
             log('Job already taken — skipping take step');
             return;
         }
-        log('Taking job ' + job.jobId);
+        log('Taking job: ' + jobLabel(job));
 
         // Listen for deposit deduction (receive.credits with negative amount)
         var depositPaid = 0;
@@ -627,7 +710,7 @@
             if (result.error) {
                 window.removeEventListener('message', depositHandler);
                 window.removeEventListener('message', fileHandler);
-                throw new Error('Job take error: ' + JSON.stringify(result.error));
+                throw new Error('Job take error: ' + friendlyError(result.error.message || JSON.stringify(result.error)));
             }
         } catch (e) {
             window.removeEventListener('message', depositHandler);
@@ -729,11 +812,8 @@
             window.removeEventListener('message', profileHandler);
 
             if (result.error) {
-                var errMsg = result.error.message || 'Unknown completion error';
-                if (result.error.failedConditions && result.error.failedConditions.length > 0) {
-                    errMsg += ': ' + result.error.failedConditions.join('; ');
-                }
-                log('Job completion error: ' + JSON.stringify(result.error), 'error');
+                var errMsg = friendlyError(result.error.message, result.error.failedConditions) || 'Unknown completion error';
+                log('Job completion error: ' + errMsg, 'error');
                 throw new Error(errMsg);
             }
 
@@ -847,93 +927,134 @@
         return null;
     }
 
+    function jobLabel(job) {
+        var parts = [job.name || job.type];
+        if (job.serverName && job.serverName !== 'None') parts.push('on ' + job.serverName);
+        var mkt = MARKET_DISPLAY_NAMES[job.marketKey] || '';
+        if (mkt) parts.push('[' + mkt + ']');
+        return parts.join(' ');
+    }
+
     // ---- File Decryption Job ----
     async function solveFileDecryption(job) {
-        log('=== File Decryption: ' + job.jobId + ' ===');
+        log('=== File Decryption: ' + jobLabel(job) + ' ===');
 
-        // 1. Take the job
-        await stepTakeJob(job);
-
-        // If already taken and completable, try completing first
-        if (job.alreadyTaken && job.canComplete) {
-            log('Job already taken and completable — completing now');
-            var earlyReward = await stepCompleteJob(job);
-            if (earlyReward) return earlyReward;
-            log('Completion failed — continuing with remaining steps');
-        } else if (job.alreadyTaken) {
-            log('Job already taken but not yet completable — continuing with remaining steps');
-        }
-
-        // 2. Determine fileInfo — from take event, or from conditions for already-taken jobs
-        var fileInfo = job.fileInfo || null;
-        if (!fileInfo) {
-            var condFile = extractFileInfoFromConditions(job);
-            if (condFile) {
-                fileInfo = condFile;
-                log('Got file info from conditions: ' + condFile.name + ' (id: ' + condFile.id + ')');
+        // Listen for file updates (server may regenerate fileId after take)
+        var latestFileId = null;
+        var fileUpdateHandler = function (evt) {
+            if (evt.data && evt.data.type === 'COR3_AUTOJOB_DESKTOP_FILE' && evt.data.data && evt.data.data.file) {
+                latestFileId = evt.data.data.file.id;
+                log('File updated: ' + evt.data.data.file.name + ' (new id: ' + latestFileId + ')');
             }
-        }
+        };
+        window.addEventListener('message', fileUpdateHandler);
 
-        // 3. Ensure we have the Downloads folder ID
-        if (!downloadFolderId) {
-            await stepDiscoverDownloadFolder();
-        }
-        if (!downloadFolderId) {
-            throw new Error('Download folder ID not found — could not discover Downloads folder');
-        }
-
-        // 4. Open download folder on desktop to find the encrypted file
-        log('Opening download folder');
-        await delay(humanDelay());
-        sendCmd('open.folder', { folderId: downloadFolderId });
-
-        var folderData;
         try {
-            folderData = await waitForEvent('COR3_AUTOJOB_DESKTOP_FOLDER', 10000);
-        } catch (e) {
-            throw new Error('Failed to open download folder');
-        }
+            // 1. Take the job
+            await stepTakeJob(job);
 
-        // Find the encrypted file — match by ID from fileInfo, or find newest
-        var targetFile = null;
-        if (folderData && folderData.data && folderData.data.files) {
-            var files = folderData.data.files;
-            if (fileInfo && fileInfo.id) {
-                targetFile = files.find(function (f) { return f.id === fileInfo.id; });
+            // If already taken and completable, try completing first
+            if (job.alreadyTaken && job.canComplete) {
+                log('Job already taken and completable — completing now');
+                var earlyReward = await stepCompleteJob(job);
+                if (earlyReward) return earlyReward;
+                log('Completion failed — continuing with remaining steps');
+            } else if (job.alreadyTaken) {
+                log('Job already taken but not yet completable — continuing with remaining steps');
             }
+
+            // 2. Determine fileInfo — from take event, updated fileId, or from conditions
+            var fileInfo = job.fileInfo || null;
+            if (latestFileId && fileInfo) {
+                fileInfo.id = latestFileId;
+            }
+            if (!fileInfo) {
+                var condFile = extractFileInfoFromConditions(job);
+                if (condFile) {
+                    fileInfo = condFile;
+                    if (latestFileId) fileInfo.id = latestFileId;
+                    log('Got file info from conditions: ' + condFile.name + ' (id: ' + condFile.id + ')');
+                }
+            }
+
+            // 3. Ensure we have the Downloads folder ID
+            if (!downloadFolderId) {
+                await stepDiscoverDownloadFolder();
+            }
+            if (!downloadFolderId) {
+                throw new Error('Download folder ID not found — could not discover Downloads folder');
+            }
+
+            // 4. Open download folder on desktop to find the encrypted file
+            log('Opening download folder');
+            await delay(humanDelay());
+            sendCmd('open.folder', { folderId: downloadFolderId });
+
+            var folderData;
+            try {
+                folderData = await waitForEvent('COR3_AUTOJOB_DESKTOP_FOLDER', 10000);
+            } catch (e) {
+                throw new Error('Failed to open download folder');
+            }
+
+            // Find the encrypted file — match by latest fileId, fileInfo id, or find newest
+            var targetFile = null;
+            if (folderData && folderData.data && folderData.data.files) {
+                var files = folderData.data.files;
+                if (latestFileId) {
+                    targetFile = files.find(function (f) { return f.id === latestFileId; });
+                }
+                if (!targetFile && fileInfo && fileInfo.id) {
+                    targetFile = files.find(function (f) { return f.id === fileInfo.id; });
+                }
+                if (!targetFile) {
+                    targetFile = files.find(function (f) { return f.isNew; }) || files[files.length - 1];
+                }
+            }
+
             if (!targetFile) {
-                // Find the newest file (isNew flag or last in array)
-                targetFile = files.find(function (f) { return f.isNew; }) || files[files.length - 1];
+                throw new Error('No encrypted file found in download folder');
             }
+
+            // 5. Open file to trigger decrypt minigame
+            ensureDecryptSolverEnabled();
+            ensureIceWallSolverEnabled();
+            ensureSimpleDecryptSolverEnabled();
+            log('Opening file: ' + targetFile.name);
+            sendCmd('open.file', { fileId: targetFile.id });
+
+            // Wait for minigame to start and auto-solver to complete
+            try {
+                var mgEvent = await waitForEvent('COR3_AUTOJOB_MINIGAME_START', 10000);
+                if (mgEvent && mgEvent.error) {
+                    var mgErr = mgEvent.error.message || '';
+                    if (mgErr.indexOf('missing-software') >= 0 || mgErr.indexOf('software') >= 0) {
+                        throw new Error('Missing required software to decrypt file — install the correct decrypter');
+                    }
+                }
+            } catch (e) {
+                if (e.message.indexOf('Missing required software') === 0) throw e;
+                log('Minigame start not detected (solver may handle it directly)', 'warn');
+            }
+            await waitForHackToBeDone();
+
+            // 6. Wait for server to register completion, then complete job
+            await delay(1500);
+            var reward = await stepCompleteJob(job);
+            if (!reward) {
+                log('No reward after decrypt — retrying completion after delay...', 'warn');
+                await delay(3000);
+                reward = await stepCompleteJob(job);
+            }
+            return reward;
+        } finally {
+            window.removeEventListener('message', fileUpdateHandler);
         }
-
-        if (!targetFile) {
-            throw new Error('No encrypted file found in download folder');
-        }
-
-        // 5. Open file to trigger decrypt minigame
-        ensureDecryptSolverEnabled();
-        ensureIceWallSolverEnabled();
-        ensureSimpleDecryptSolverEnabled();
-        log('Opening file: ' + targetFile.name);
-        sendCmd('open.file', { fileId: targetFile.id });
-
-        // Wait for minigame to start and auto-solver to complete
-        try {
-            await waitForEvent('COR3_AUTOJOB_MINIGAME_START', 10000);
-        } catch (e) {
-            log('Minigame start not detected (solver may handle it directly)', 'warn');
-        }
-        await waitForHackToBeDone();
-
-        // 6. Refresh job list and complete
-        var reward = await stepCompleteJob(job);
-        return reward;
     }
 
     // ---- IP Injection Job ----
     async function solveIPInjection(job) {
-        log('=== IP Injection: ' + job.jobId + ' ===');
+        log('=== IP Injection: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -969,7 +1090,7 @@
         }
 
         if (transitData.error) {
-            throw new Error('Transit error: ' + JSON.stringify(transitData.error));
+            throw new Error('Transit error: ' + friendlyError(transitData.error.message || JSON.stringify(transitData.error)));
         }
 
         // 5. Add the IPs from the job conditions
@@ -1014,9 +1135,9 @@
                     // Server IP limit reached — cannot add more IPs, skip this job
                     if (errMsg === 'sai-transit-ip-limit') {
                         var limit = addResult.error.limit || 20;
-                        throw new Error('Server IP limit reached (' + limit + ' IPs max). Clear old IPs via Auto Clear Generated IPs toggle.');
+                        throw new Error('Server IP limit reached (' + limit + ' IPs max). Clear old IPs via Auto Clear IPs toggle.');
                     }
-                    throw new Error('IP injection failed for ' + ip + ': ' + JSON.stringify(addResult.error));
+                    throw new Error('IP injection failed for ' + ip + ': ' + friendlyError(addResult.error.message));
                 }
             } catch (e) {
                 if (e.message.indexOf('Server IP limit reached') === 0) throw e;
@@ -1035,7 +1156,7 @@
 
     // ---- Data Download Job ----
     async function solveDataDownload(job) {
-        log('=== Data Download: ' + job.jobId + ' ===');
+        log('=== Data Download: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -1071,7 +1192,7 @@
         }
 
         if (filesData.error) {
-            throw new Error('Files error: ' + JSON.stringify(filesData.error));
+            throw new Error('Files error: ' + friendlyError(filesData.error.message || JSON.stringify(filesData.error)));
         }
 
         // 5. Find the job file (has jobId matching ours)
@@ -1094,7 +1215,7 @@
                 var dlResult = await waitForEvent('COR3_AUTOJOB_SAI_FILE_DOWNLOAD', 10000);
                 if (dlResult.error) {
                     // May already be downloaded
-                    log('File download response: ' + JSON.stringify(dlResult.error), 'warn');
+                    log('File download response: ' + friendlyError(dlResult.error.message || JSON.stringify(dlResult.error)), 'warn');
                 }
             } catch (e) {
                 log('File download timed out (may already be downloaded)', 'warn');
@@ -1155,7 +1276,7 @@
 
     // ---- Log Deletion Job ----
     async function solveLogDeletion(job) {
-        log('=== Log Deletion: ' + job.jobId + ' ===');
+        log('=== Log Deletion: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -1191,7 +1312,7 @@
         }
 
         if (logsData.error) {
-            throw new Error('Logs error: ' + JSON.stringify(logsData.error));
+            throw new Error('Logs error: ' + friendlyError(logsData.error.message || JSON.stringify(logsData.error)));
         }
 
         // 5. Find the job log (has jobId matching ours)
@@ -1216,7 +1337,7 @@
         try {
             var delResult = await waitForEvent('COR3_AUTOJOB_SAI_LOG_DELETE', 10000);
             if (delResult.error) {
-                throw new Error('Log delete failed: ' + JSON.stringify(delResult.error));
+                throw new Error('Log delete failed: ' + friendlyError(delResult.error.message || JSON.stringify(delResult.error)));
             }
         } catch (e) {
             throw new Error('Log delete timed out: ' + e.message);
@@ -1232,7 +1353,7 @@
 
     // ---- Log Download Job ----
     async function solveLogDownload(job) {
-        log('=== Log Download: ' + job.jobId + ' ===');
+        log('=== Log Download: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -1268,7 +1389,7 @@
         }
 
         if (logsData.error) {
-            throw new Error('Logs error: ' + JSON.stringify(logsData.error));
+            throw new Error('Logs error: ' + friendlyError(logsData.error.message || JSON.stringify(logsData.error)));
         }
 
         // 5. Find the job log (has jobId matching ours)
@@ -1294,7 +1415,7 @@
             var dlResult = await waitForEvent('COR3_AUTOJOB_SAI_LOG_DOWNLOAD', 10000);
             if (dlResult.error) {
                 // May already be downloaded
-                log('Log download response: ' + JSON.stringify(dlResult.error), 'warn');
+                log('Log download response: ' + friendlyError(dlResult.error.message || JSON.stringify(dlResult.error)), 'warn');
             }
         } catch (e) {
             log('Log download timed out (may already be downloaded)', 'warn');
@@ -1310,125 +1431,160 @@
 
     // ---- Decrypt & Extract Job ----
     async function solveDecryptExtract(job) {
-        log('=== Decrypt & Extract: ' + job.jobId + ' ===');
+        log('=== Decrypt & Extract: ' + jobLabel(job) + ' ===');
 
-        // 1. Take the job
-        await stepTakeJob(job);
+        // Listen for file updates (server may regenerate fileId after take)
+        var latestFileId = null;
+        var fileUpdateHandler = function (evt) {
+            if (evt.data && evt.data.type === 'COR3_AUTOJOB_DESKTOP_FILE' && evt.data.data && evt.data.data.file) {
+                latestFileId = evt.data.data.file.id;
+                log('File updated: ' + evt.data.data.file.name + ' (new id: ' + latestFileId + ')');
+            }
+        };
+        window.addEventListener('message', fileUpdateHandler);
 
-        if (!job.serverId) {
-            throw new Error('No target server for Decrypt & Extract job');
-        }
-
-        // If already taken and completable, try completing first
-        if (job.alreadyTaken && job.canComplete) {
-            log('Job already taken and completable — completing now');
-            var earlyReward = await stepCompleteJob(job);
-            if (earlyReward) return earlyReward;
-            log('Completion failed — continuing with remaining steps');
-        } else if (job.alreadyTaken) {
-            log('Job already taken but not yet completable — continuing with remaining steps');
-        }
-
-        // 2. Set endpoint
-        await stepSetEndpoint(job.serverId);
-
-        // 3. Login
-        await stepLogin(job.serverId);
-
-        // 4. Get files list
-        log('Getting server files');
-        sendCmd('get.files', { serverId: job.serverId });
-        var filesData;
         try {
-            filesData = await waitForEvent('COR3_AUTOJOB_SAI_FILES', 10000);
-        } catch (e) {
-            throw new Error('Failed to get server files');
-        }
+            // 1. Take the job
+            await stepTakeJob(job);
 
-        if (filesData.error) {
-            throw new Error('Files error: ' + JSON.stringify(filesData.error));
-        }
-
-        // 5. Find the job file
-        var jobFile = null;
-        if (filesData.data && filesData.data.files) {
-            jobFile = filesData.data.files.find(function (f) {
-                return f.jobId === job.jobId;
-            });
-        }
-
-        var fileAlreadyDownloaded = false;
-        if (!jobFile) {
-            // File may already be downloaded — skip to decrypt step
-            log('Job file not found on server (may already be downloaded)', 'warn');
-            fileAlreadyDownloaded = true;
-        } else {
-            // 6. Download the file
-            log('Downloading file: ' + jobFile.name);
-            sendCmd('file.download', { serverId: job.serverId, fileId: jobFile.fileId });
-
-            try {
-                var dlResult = await waitForEvent('COR3_AUTOJOB_SAI_FILE_DOWNLOAD', 10000);
-                if (dlResult.error) {
-                    log('File download response: ' + JSON.stringify(dlResult.error), 'warn');
-                }
-            } catch (e) {
-                log('File download timed out (may already be downloaded)', 'warn');
+            if (!job.serverId) {
+                throw new Error('No target server for Decrypt & Extract job');
             }
 
-            log('File downloaded — now opening for decryption', 'success');
-        }
-        await delay(humanDelay());
+            // If already taken and completable, try completing first
+            if (job.alreadyTaken && job.canComplete) {
+                log('Job already taken and completable — completing now');
+                var earlyReward = await stepCompleteJob(job);
+                if (earlyReward) return earlyReward;
+                log('Completion failed — continuing with remaining steps');
+            } else if (job.alreadyTaken) {
+                log('Job already taken but not yet completable — continuing with remaining steps');
+            }
 
-        // 7. Open download folder and decrypt file
-        if (!downloadFolderId) {
-            await stepDiscoverDownloadFolder();
-        }
-        if (!downloadFolderId) {
-            throw new Error('Download folder ID not found — could not discover Downloads folder');
-        }
+            // 2. Set endpoint
+            await stepSetEndpoint(job.serverId);
 
-        sendCmd('open.folder', { folderId: downloadFolderId });
-        var folderData;
-        try {
-            folderData = await waitForEvent('COR3_AUTOJOB_DESKTOP_FOLDER', 10000);
-        } catch (e) {
-            throw new Error('Failed to open download folder for decryption');
+            // 3. Login
+            await stepLogin(job.serverId);
+
+            // 4. Get files list
+            log('Getting server files');
+            sendCmd('get.files', { serverId: job.serverId });
+            var filesData;
+            try {
+                filesData = await waitForEvent('COR3_AUTOJOB_SAI_FILES', 10000);
+            } catch (e) {
+                throw new Error('Failed to get server files');
+            }
+
+            if (filesData.error) {
+                var filesErr = filesData.error.message || JSON.stringify(filesData.error);
+                if (filesErr.indexOf('missing-software') >= 0 || filesErr.indexOf('software') >= 0) {
+                    throw new Error('Missing required software on server — cannot access files');
+                }
+                throw new Error('Files error: ' + filesErr);
+            }
+
+            // 5. Find the job file
+            var jobFile = null;
+            if (filesData.data && filesData.data.files) {
+                jobFile = filesData.data.files.find(function (f) {
+                    return f.jobId === job.jobId;
+                });
+            }
+
+            // 6. Download the file if necessary
+            var fileAlreadyDownloaded = false;
+            if (!jobFile) {
+                log('Job file not found on server (may already be downloaded)', 'warn');
+                fileAlreadyDownloaded = true;
+            } else {
+                log('Downloading file: ' + jobFile.name);
+                sendCmd('file.download', { serverId: job.serverId, fileId: jobFile.fileId });
+
+                try {
+                    var dlResult = await waitForEvent('COR3_AUTOJOB_SAI_FILE_DOWNLOAD', 10000);
+                    if (dlResult.error) {
+                        log('File download response: ' + friendlyError(dlResult.error.message || JSON.stringify(dlResult.error)), 'warn');
+                    }
+                } catch (e) {
+                    log('File download timed out (may already be downloaded)', 'warn');
+                }
+
+                log('File downloaded — now opening for decryption', 'success');
+            }
+            await delay(humanDelay());
+
+            // 7. Open download folder and decrypt file
+            if (!downloadFolderId) {
+                await stepDiscoverDownloadFolder();
+            }
+            if (!downloadFolderId) {
+                throw new Error('Download folder ID not found — could not discover Downloads folder');
+            }
+
+            sendCmd('open.folder', { folderId: downloadFolderId });
+            var folderData;
+            try {
+                folderData = await waitForEvent('COR3_AUTOJOB_DESKTOP_FOLDER', 10000);
+            } catch (e) {
+                throw new Error('Failed to open download folder for decryption');
+            }
+
+            var encFile = null;
+            if (folderData && folderData.data && folderData.data.files) {
+                var files = folderData.data.files;
+                if (latestFileId) {
+                    encFile = files.find(function (f) { return f.id === latestFileId; });
+                }
+                if (!encFile) {
+                    encFile = files.find(function (f) { return f.isNew; }) ||
+                              files[files.length - 1];
+                }
+            }
+
+            if (!encFile) {
+                throw new Error('No file found in download folder for decryption');
+            }
+
+            // 8. Open file to trigger decrypt minigame
+            ensureDecryptSolverEnabled();
+            ensureIceWallSolverEnabled();
+            ensureSimpleDecryptSolverEnabled();
+            log('Opening file for decryption: ' + encFile.name);
+            sendCmd('open.file', { fileId: encFile.id });
+
+            try {
+                var mgEvent = await waitForEvent('COR3_AUTOJOB_MINIGAME_START', 10000);
+                if (mgEvent && mgEvent.error) {
+                    var mgErr = mgEvent.error.message || '';
+                    if (mgErr.indexOf('missing-software') >= 0 || mgErr.indexOf('software') >= 0) {
+                        throw new Error('Missing required software to decrypt file — install the correct decrypter');
+                    }
+                }
+            } catch (e) {
+                if (e.message.indexOf('Missing required software') === 0) throw e;
+                log('Minigame start not detected (solver may handle directly)', 'warn');
+            }
+            await waitForHackToBeDone();
+
+            // 9. Wait for server to register completion, then complete job
+            await delay(1500);
+            var reward = await stepCompleteJob(job);
+            if (!reward) {
+                log('No reward after decrypt — retrying completion after delay...', 'warn');
+                await delay(3000);
+                reward = await stepCompleteJob(job);
+            }
+            return reward;
+        } finally {
+            window.removeEventListener('message', fileUpdateHandler);
         }
-
-        var encFile = null;
-        if (folderData && folderData.data && folderData.data.files) {
-            // Find newest file (usually the one just downloaded)
-            encFile = folderData.data.files.find(function (f) { return f.isNew; }) ||
-                      folderData.data.files[folderData.data.files.length - 1];
-        }
-
-        if (!encFile) {
-            throw new Error('No file found in download folder for decryption');
-        }
-
-        // 8. Open file to trigger decrypt minigame
-        ensureDecryptSolverEnabled();
-        ensureIceWallSolverEnabled();
-        ensureSimpleDecryptSolverEnabled();
-        log('Opening file for decryption: ' + encFile.name);
-        sendCmd('open.file', { fileId: encFile.id });
-
-        try {
-            await waitForEvent('COR3_AUTOJOB_MINIGAME_START', 10000);
-        } catch (e) {
-            log('Minigame start not detected (solver may handle directly)', 'warn');
-        }
-        await waitForHackToBeDone();
-
-        // 9. Complete job
-        var reward = await stepCompleteJob(job);
-        return reward;
     }
 
     // ---- File Elimination (DeleteFile) Job ----
     async function solveFileElimination(job) {
-        log('=== File Elimination: ' + job.jobId + ' ===');
+        log('=== File Elimination: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -1464,7 +1620,7 @@
         }
 
         if (filesData.error) {
-            throw new Error('Files error: ' + JSON.stringify(filesData.error));
+            throw new Error('Files error: ' + friendlyError(filesData.error.message || JSON.stringify(filesData.error)));
         }
 
         // 5. Find the job file (source=="job" and jobId matches, or match by fileIds from conditions)
@@ -1504,7 +1660,7 @@
         try {
             var delResult = await waitForEvent('COR3_AUTOJOB_SAI_FILE_DELETE', 10000);
             if (delResult.error) {
-                throw new Error('File delete failed: ' + JSON.stringify(delResult.error));
+                throw new Error('File delete failed: ' + friendlyError(delResult.error.message || JSON.stringify(delResult.error)));
             }
         } catch (e) {
             throw new Error('File delete timed out: ' + e.message);
@@ -1520,7 +1676,7 @@
 
     // ---- Data Upload (UploadFile) Job ----
     async function solveDataUpload(job) {
-        log('=== Data Upload: ' + job.jobId + ' ===');
+        log('=== Data Upload: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -1589,7 +1745,7 @@
 
     // ---- IP Cleanup (DeleteIps) Job ----
     async function solveIPCleanup(job) {
-        log('=== IP Cleanup: ' + job.jobId + ' ===');
+        log('=== IP Cleanup: ' + jobLabel(job) + ' ===');
 
         // 1. Take the job
         await stepTakeJob(job);
@@ -1625,7 +1781,7 @@
         }
 
         if (transitData.error) {
-            throw new Error('Transit error: ' + JSON.stringify(transitData.error));
+            throw new Error('Transit error: ' + friendlyError(transitData.error.message || JSON.stringify(transitData.error)));
         }
 
         // 5. Determine IPs to remove — from conditions first, then from transit data (source="job")
@@ -1662,7 +1818,7 @@
             try {
                 var rmResult = await waitForEvent('COR3_AUTOJOB_SAI_TRANSIT_REMOVE', 10000);
                 if (rmResult.error) {
-                    throw new Error('IP removal failed for ' + ip + ': ' + JSON.stringify(rmResult.error));
+                    throw new Error('IP removal failed for ' + ip + ': ' + friendlyError(rmResult.error.message || JSON.stringify(rmResult.error)));
                 }
             } catch (e) {
                 throw new Error('IP removal timed out for ' + ip + ': ' + e.message);
@@ -1710,6 +1866,7 @@
         if (running) return;
         running = true;
         abortFlag = false;
+        tokenExpired = false;
 
         // Sort jobs by server priority (furthest first), then by job type priority within same server
         jobQueue.sort(function (a, b) {
@@ -1858,7 +2015,7 @@
                 } else if (job.marketKey === 'soyuz') {
                     await stepSetEndpoint(SOYUZ_MARKET_SERVER_ID);
                 }
-                log('Processing job ' + (i + 1) + '/' + jobQueue.length + ': ' + job.name + ' on ' + (job.serverName || 'None'));
+                log('Processing job ' + (i + 1) + '/' + jobQueue.length + ': ' + jobLabel(job));
                 var reward = await solveJob(job);
                 if (reward) {
                     job.status = 'done';
@@ -1870,16 +2027,23 @@
                     log('Job completion returned no reward: ' + job.name, 'warn');
                 }
             } catch (e) {
+                var errText = friendlyError(e.message);
                 // If failure is maintenance-related, mark as skipped so background.js can reschedule
-                if (e.message && (e.message.includes('maintenance') || e.message.includes('unreachable'))) {
+                if (e.message && (e.message.includes('token-expired') || e.message.includes('invalid-access-token'))) {
                     job.status = 'skipped';
-                    job.error = e.message;
+                    job.error = errText;
+                    abortFlag = true;
+                    tokenExpired = true;
+                    log('⚠️ Job skipped (token expired): ' + job.name + ' — ' + errText, 'warn');
+                } else if (e.message && (e.message.includes('maintenance') || e.message.includes('unreachable'))) {
+                    job.status = 'skipped';
+                    job.error = errText;
                     job.maintenanceEndsAt = null;
-                    log('⚠️ Job skipped (unreachable): ' + job.name + ' — ' + e.message, 'warn');
+                    log('⚠️ Job skipped (unreachable): ' + job.name + ' — ' + errText, 'warn');
                 } else {
                     job.status = 'failed';
-                    job.error = e.message;
-                    log('❌ Job failed: ' + job.name + ' — ' + e.message, 'error');
+                    job.error = errText;
+                    log('❌ Job failed: ' + job.name + ' — ' + errText, 'error');
                 }
             }
 

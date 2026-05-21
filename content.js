@@ -10,6 +10,7 @@ let _autoUpdateMarkets = false;
 let _marketRefreshInProgress = false;
 let _autoUpdateMarketsLastRefresh = 0;
 let _seqRefreshRunning = false;
+let _autoJobsActive = false;
 const _AUTO_UPDATE_MARKETS_INTERVAL = 10 * 60 * 1000; // 10 minutes
 try { chrome.storage.sync.get('autoUpdateMarkets', (data) => {
     if (data.autoUpdateMarkets !== undefined) _autoUpdateMarkets = data.autoUpdateMarkets;
@@ -51,7 +52,7 @@ function _initAutoUpdateMarketsTimer() {
 setInterval(() => {
     if (!_autoUpdateMarkets) return;
     if (!isContextValid()) return;
-    if (_marketRefreshInProgress || _seqRefreshRunning) return;
+    if (_marketRefreshInProgress || _seqRefreshRunning || _autoJobsActive) return;
     const now = Date.now();
     if (now - _autoUpdateMarketsLastRefresh < _AUTO_UPDATE_MARKETS_INTERVAL) return;
     _autoUpdateMarketsLastRefresh = now;
@@ -137,13 +138,24 @@ window.addEventListener('message', (event) => {
     }
     // Handle dark market unreachable — keep cached data, set flag
     if (event.data && event.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE') {
-        chrome.storage.local.set({ darkMarketAvailable: false, darkMarketDataUpdatedAt: now });
+        chrome.storage.local.set({ darkMarketAvailable: false, darkMarketDataUpdatedAt: now, darkMarketMaintenanceEndsAt: event.data.maintenanceEndsAt || null, darkMarketBlockerServer: event.data.blockerServerName || null });
     }
     if (event.data && event.data.type === 'COR3_WS_SOYUZ_MARKET_UNREACHABLE') {
-        chrome.storage.local.set({ soyuzMarketAvailable: false, soyuzMarketDataUpdatedAt: now });
+        chrome.storage.local.set({ soyuzMarketAvailable: false, soyuzMarketDataUpdatedAt: now, soyuzMarketMaintenanceEndsAt: event.data.maintenanceEndsAt || null, soyuzMarketBlockerServer: event.data.blockerServerName || null });
     }
     if (event.data && event.data.type === 'COR3_BEARER_TOKEN') {
-        chrome.storage.local.set({ bearerToken: event.data.token });
+        chrome.storage.local.get('bearerToken', (prev) => {
+            const isNew = !prev.bearerToken || prev.bearerToken !== event.data.token;
+            chrome.storage.local.set({ bearerToken: event.data.token });
+            if (isNew) {
+                fetch('https://svc-corie.cor3.gg/api/user-daily-claim', {
+                    headers: { 'Authorization': event.data.token }
+                })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => { if (data) chrome.storage.local.set({ dailyOpsData: data, dailyOpsUpdatedAt: Date.now(), dailyOpsError: null }); })
+                .catch(() => {});
+            }
+        });
     }
     // Store web version and system version
     if (event.data && event.data.type === 'COR3_WEB_VERSION') {
@@ -759,7 +771,7 @@ async function checkAutoRefresh() {
         // window.postMessage which still works. Skip storage-dependent timer checks
         // but keep the interval alive so it resumes if context is restored (page reload).
         if (!isContextValid()) return;
-        if (_seqRefreshRunning) return; // sequential refresh already in progress
+        if (_seqRefreshRunning || _autoJobsActive) return;
 
         // Check if ANY enabled market timer hit 0 (with 60s retry cooldown for expired timers)
         let needsRefresh = false;
@@ -1121,13 +1133,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             patchVersion: window.__cor3PatchVersion
         });
     } else if (request.action === "startAutoJobs") {
-        // Start auto job solver — inject engine script and pass job queue
+        _autoJobsActive = true;
         injectAutoJobSolver();
         setTimeout(() => {
             window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: request.jobs }, '*');
         }, 500);
         sendResponse({ success: true });
     } else if (request.action === "stopAutoJobs") {
+        _autoJobsActive = false;
         window.postMessage({ type: 'COR3_AUTOJOB_STOP' }, '*');
         sendResponse({ success: true });
     } else if (request.action === "enableHackSolvers") {
@@ -1135,6 +1148,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         injectDecryptSolver();
         injectIceWallSolver();
         injectSimpleDecryptSolver();
+        sendResponse({ success: true });
+    } else if (request.action === "waitForHackDone") {
+        // Poll DOM for hack minigame close, relay result to storage for background.js
+        const maxWait = request.timeoutMs || 120000;
+        let elapsed = 0;
+        const interval = 500;
+        function isMinigameOpen() {
+            return !!(document.querySelector('[data-component-name="IceWallBreakApplication"]') ||
+                document.querySelector('[data-sentry-component="IceWallBreakApplication"]') ||
+                document.querySelector('[data-component-name="WallBoard"]') ||
+                document.querySelector('[data-sentry-component="ConfigHackApplication"]') ||
+                document.querySelector('[data-component-name="SimpleDecryptApplication"]') ||
+                document.querySelector('[data-sentry-component="SimpleDecryptApplication"]'));
+        }
+        function pollClose() {
+            if (!isMinigameOpen()) {
+                chrome.storage.local.set({ _clearIpsHackDone: { done: true, ts: Date.now() } });
+                return;
+            }
+            elapsed += interval;
+            if (elapsed >= maxWait) {
+                chrome.storage.local.set({ _clearIpsHackDone: { done: false, timeout: true, ts: Date.now() } });
+                return;
+            }
+            setTimeout(pollClose, interval);
+        }
+        pollClose();
         sendResponse({ success: true });
     } else if (request.action === "autoClearIpsCmd") {
         // Relay auto-clear-ips WS commands to MAIN world
@@ -1309,6 +1349,37 @@ function injectAutoJobSolver() {
     console.log('[COR3 Helper] Auto Job Solver engine injected');
 }
 
+// Serialized batched log writer — prevents read-modify-write races
+let _autoJobLogQueue = [];
+let _autoJobLogFlushTimer = null;
+let _autoJobLogFlushing = false;
+function _flushAutoJobLogs() {
+    _autoJobLogFlushTimer = null;
+    if (_autoJobLogFlushing || _autoJobLogQueue.length === 0 || !isContextValid()) return;
+    _autoJobLogFlushing = true;
+    const pending = _autoJobLogQueue.splice(0);
+    chrome.storage.local.get('autoJobsDebugLogs', (result) => {
+        if (!isContextValid()) { _autoJobLogFlushing = false; return; }
+        const logs = Array.isArray(result.autoJobsDebugLogs) ? result.autoJobsDebugLogs : [];
+        for (const entry of pending) logs.push(entry);
+        if (logs.length > 200) logs.splice(0, logs.length - 200);
+        chrome.storage.local.set({ autoJobsDebugLogs: logs }, () => {
+            _autoJobLogFlushing = false;
+            if (_autoJobLogQueue.length > 0) {
+                _flushAutoJobLogs();
+            }
+        });
+    });
+}
+function queueAutoJobLog(msg, level) {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    _autoJobLogQueue.push({ time: timeStr, msg: msg, level: level || 'info' });
+    if (!_autoJobLogFlushTimer && !_autoJobLogFlushing) {
+        _autoJobLogFlushTimer = setTimeout(_flushAutoJobLogs, 100);
+    }
+}
+
 // Listen for auto-job log/tracker updates from the engine (MAIN world -> content script -> storage)
 window.addEventListener('message', (event) => {
     if (event.source !== window) return;
@@ -1362,18 +1433,7 @@ window.addEventListener('message', (event) => {
         });
     }
     if (event.data && event.data.type === 'COR3_AUTOJOB_LOG') {
-        // Append directly to persisted debug logs array (works even when popup is closed)
-        const logMsg = event.data.msg;
-        const logLevel = event.data.level || 'info';
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        chrome.storage.local.get('autoJobsDebugLogs', (result) => {
-            if (!isContextValid()) return;
-            const logs = Array.isArray(result.autoJobsDebugLogs) ? result.autoJobsDebugLogs : [];
-            logs.push({ time: timeStr, msg: logMsg, level: logLevel });
-            if (logs.length > 200) logs.splice(0, logs.length - 200);
-            chrome.storage.local.set({ autoJobsDebugLogs: logs });
-        });
+        queueAutoJobLog(event.data.msg, event.data.level);
     }
     if (event.data && event.data.type === 'COR3_WS_NETWORK_MAP') {
         chrome.storage.local.set({ serverMaintenanceMap: event.data.servers });
@@ -1382,6 +1442,7 @@ window.addEventListener('message', (event) => {
         chrome.storage.local.set({ autoJobsTracker: event.data.tracker });
     }
     if (event.data && event.data.type === 'COR3_AUTOJOB_DONE') {
+        _autoJobsActive = false;
         chrome.storage.local.set({ autoJobsRunning: false });
     }
     if (event.data && event.data.type === 'COR3_ALL_MARKETS_REFRESHED') {
@@ -1442,8 +1503,10 @@ chrome.storage.local.get(['autoJobsRunning', 'autoJobsQueue'], (data) => {
     if (data.autoJobsRunning && data.autoJobsQueue && data.autoJobsQueue.length > 0) {
         console.log('[COR3 Helper] Resuming auto jobs after page reload');
         injectAutoJobSolver();
+        // Refresh market data first so canComplete flags are up-to-date
+        window.postMessage({ type: 'COR3_REFRESH_ALL_MARKETS' }, '*');
         setTimeout(() => {
             window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: data.autoJobsQueue }, '*');
-        }, 5000); // longer delay on page reload
+        }, 8000); // longer delay on page reload to allow market refresh
     }
 });

@@ -190,6 +190,7 @@
     const statsLabel = document.getElementById('statsLabel');
     const pageSelector = document.getElementById('pageSelector');
     const btnLive = document.getElementById('btnLive');
+    const btnRefresh = document.getElementById('btnRefresh');
     const btnClear = document.getElementById('btnClear');
     const btnSendToggle = document.getElementById('btnSendToggle');
     const sendPanel = document.getElementById('sendPanel');
@@ -917,6 +918,11 @@
 
     // --- Event Listeners ---
     btnLive.addEventListener('click', toggleLive);
+    btnRefresh.addEventListener('click', async () => {
+        await refreshPageSelector();
+        await loadCurrentPage();
+        console.log('[COR3 Panel] Manual refresh completed');
+    });
     btnClear.addEventListener('click', clearMessages);
     detailClose.addEventListener('click', closeDetail);
 
