@@ -22,7 +22,14 @@
 
             ws.addEventListener('message', function (event) {
                 try {
-                    handleWsMessage(event.data);
+                    var raw = event.data;
+                    if (raw instanceof ArrayBuffer || raw instanceof Blob || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(raw) && !(raw instanceof DataView))) {
+                        decodeBinaryMsg(raw, function (str) {
+                            if (str) handleWsMessage(str);
+                        });
+                    } else {
+                        handleWsMessage(raw);
+                    }
                 } catch (e) {
                     // silent
                 }
@@ -38,6 +45,25 @@
     window.WebSocket.OPEN = OrigWebSocket.OPEN;
     window.WebSocket.CLOSING = OrigWebSocket.CLOSING;
     window.WebSocket.CLOSED = OrigWebSocket.CLOSED;
+
+    function decodeBinaryMsg(raw, cb) {
+        var codec = window.__cor3MsgpackCodec;
+        if (!codec) { cb(null); return; }
+        if (raw instanceof Blob) {
+            raw.arrayBuffer().then(function (buf) {
+                try {
+                    var pkt = codec.decode(new Uint8Array(buf));
+                    cb(codec.packetToString(pkt));
+                } catch (e) { cb(null); }
+            }).catch(function () { cb(null); });
+            return;
+        }
+        try {
+            var u8 = (raw instanceof ArrayBuffer) ? new Uint8Array(raw) : raw;
+            var pkt = codec.decode(u8);
+            cb(codec.packetToString(pkt));
+        } catch (e) { cb(null); }
+    }
 
     function handleWsMessage(rawData) {
         if (typeof rawData !== 'string') return;
@@ -99,10 +125,16 @@
 
     // Also provide a way to request expedition data via existing sockets
     window.__cor3RequestExpeditions = function () {
-        const msg = '42["event",{"event":{"name":"expeditions","action":"get.config"}}]';
+        var msg = '42["event",{"event":{"name":"expeditions","action":"get.config"}}]';
+        var codec = window.__cor3MsgpackCodec;
+        var toSend = msg;
+        if (codec && codec.isReady()) {
+            var buf = codec.stringToPacketBuffer(msg);
+            if (buf) toSend = buf;
+        }
         for (const ws of trackedSockets) {
             if (ws.readyState === OrigWebSocket.OPEN) {
-                ws.send(msg);
+                ws.send(toSend);
                 return true;
             }
         }

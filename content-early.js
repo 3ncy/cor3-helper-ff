@@ -254,6 +254,14 @@ var webVersion = null;
                     try {
                         if (typeof data === 'string') {
                             window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: data }, '*');
+                        } else if (data instanceof ArrayBuffer || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(data))) {
+                            decodeBinaryMsg(data, function (str) {
+                                if (str) window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                            });
+                        } else if (data instanceof Blob) {
+                            decodeBinaryMsg(data, function (str) {
+                                if (str) window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                            });
                         }
                     } catch (e) { /* silent */ }
                     return origSend(data);
@@ -261,7 +269,6 @@ var webVersion = null;
 
                 ws.addEventListener('message', function (event) {
                     try {
-                        // Only promote non-minigame sockets to activeSocket
                         if (!isMinigameSocket) {
                             if (activeSocket !== ws) {
                                 console.log('[COR3 Helper] Active socket changed to:', ws.__cor3Url);
@@ -269,7 +276,14 @@ var webVersion = null;
                             }
                             socketLastActivity.set(ws, Date.now());
                         }
-                        handleWsMessage(event.data, ws);
+                        var raw = event.data;
+                        if (raw instanceof ArrayBuffer || raw instanceof Blob || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(raw) && !(raw instanceof DataView))) {
+                            decodeBinaryMsg(raw, function (str) {
+                                if (str) handleWsMessage(str, ws);
+                            });
+                        } else {
+                            handleWsMessage(raw, ws);
+                        }
                     } catch (e) {
                         // silent
                     }
@@ -313,6 +327,25 @@ var webVersion = null;
     });
 
     window.WebSocket = WebSocketProxy;
+
+    function decodeBinaryMsg(raw, cb) {
+        var codec = window.__cor3MsgpackCodec;
+        if (!codec) { cb(null); return; }
+        if (raw instanceof Blob) {
+            raw.arrayBuffer().then(function (buf) {
+                try {
+                    var pkt = codec.decode(new Uint8Array(buf));
+                    cb(codec.packetToString(pkt));
+                } catch (e) { cb(null); }
+            }).catch(function () { cb(null); });
+            return;
+        }
+        try {
+            var u8 = (raw instanceof ArrayBuffer) ? new Uint8Array(raw) : raw;
+            var pkt = codec.decode(u8);
+            cb(codec.packetToString(pkt));
+        } catch (e) { cb(null); }
+    }
 
     function handleWsMessage(rawData, socket) {
         if (typeof rawData !== 'string') return;
@@ -1004,17 +1037,19 @@ var webVersion = null;
     var wsSendFlushTimer = null;
 
     function wsSendRaw(msg) {
-        // NOTE: Outbound WS logging is handled by the ws.send() intercept in the Proxy construct.
-        // No need to post COR3_WS_LOG here — it would cause duplicate entries.
+        var toSend = msg;
+        var codec = window.__cor3MsgpackCodec;
+        if (codec && codec.isReady() && typeof msg === 'string') {
+            var buf = codec.stringToPacketBuffer(msg);
+            if (buf) toSend = buf;
+        }
 
-        // Prefer the activeSocket if it's still open
         if (activeSocket && activeSocket.readyState === OrigWebSocket.OPEN) {
-            activeSocket.send(msg);
+            activeSocket.send(toSend);
             wsSendLastTime = Date.now();
             return true;
         }
 
-        // Fall back to most recently active socket
         let bestSocket = null;
         let bestTime = 0;
         for (const ws of trackedSockets) {
@@ -1029,7 +1064,7 @@ var webVersion = null;
 
         if (bestSocket) {
             activeSocket = bestSocket;
-            bestSocket.send(msg);
+            bestSocket.send(toSend);
             wsSendLastTime = Date.now();
             return true;
         }
