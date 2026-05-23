@@ -4031,6 +4031,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
             if (!change) return false;
             const oldReset = change.oldValue && change.oldValue.nextJobsResetAt;
             const newReset = change.newValue && change.newValue.nextJobsResetAt;
+            console.log ("old reset: " + oldReset);
+            console.log ("new reset: " + newReset);
             return newReset && newReset !== oldReset;
         };
         const homeReset = checkReset(changes.marketData);

@@ -806,6 +806,13 @@
         };
         window.addEventListener('message', profileHandler);
 
+        // Set endpoint for D4RK/SOYUZ market jobs before completing
+        if (getMarketNameById(job.marketId) === 'D4RK') {
+            await stepSetEndpoint(DARK_MARKET_SERVER_ID);
+        } else if (getMarketNameById(job.marketId) === 'SOYUZ') {
+            await stepSetEndpoint(SOYUZ_MARKET_SERVER_ID);
+        }
+
         sendCmd('job.complete', { marketId: job.marketId, jobId: job.jobId });
         try {
             var result = await waitForEvent('COR3_AUTOJOB_JOB_COMPLETED', 20000);
