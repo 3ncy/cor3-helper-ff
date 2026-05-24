@@ -1305,17 +1305,30 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
             return sA.localeCompare(sB);
         });
         html += `<table style="width:100%;font-size:10px;border-collapse:collapse;margin-bottom:4px;">`;
-        html += `<tr style="color:var(--text-dim);border-bottom:1px solid var(--border);"><th style="text-align:left;padding:3px 4px;">Job</th><th style="text-align:left;padding:3px 4px;">Server</th><th style="text-align:center;padding:3px 4px;">Status</th><th style="text-align:right;padding:3px 4px;">Reward</th></tr>`;
+        html += `<tr style="color:var(--text-dim);border-bottom:1px solid var(--border);"><th style="text-align:left;padding:3px 4px;">Job</th><th style="text-align:left;padding:3px 4px;">Server</th><th style="text-align:center;padding:3px 4px;">Status</th><th style="text-align:right;padding:3px 4px;">Reward/Penalty</th></tr>`;
         for (const job of allJobsList) {
             const dimStyle = (job._status === 'COMPLETED' || job._status === 'EXPIRED') ? 'opacity:0.5;' : '';
             const jobName = job.name || job.id || 'Unknown';
             const serverName = (job.relatedServers && job.relatedServers[0]) ? job.relatedServers[0].serverName : 'N/A';
             let rewardStr = '--';
-            if (job.rewardCredits) {
-                rewardStr = `💰 ${job.rewardCredits.toLocaleString()}`;
-            }
-            if (job.rewardReputation) {
-                rewardStr += ` · ⭐ ${job.rewardReputation}`;
+            let rewardColor = 'var(--accent-green)';
+            const isFailed = job._status === 'FAILED' || job._status === 'EXPIRED';
+            if (isFailed) {
+                if (job.reputationPenalty > 0) {
+                    rewardStr = `<span style="color:var(--accent-red,#f38ba8);">⭐ -${job.reputationPenalty.toLocaleString()}</span>`;
+                    rewardColor = 'var(--accent-red, #f38ba8)';
+                } else if (job.deposit > 0) {
+                    rewardStr = `<span style="color:var(--accent-red,#f38ba8);">💰 -${job.deposit.toLocaleString()}</span>`;
+                    rewardColor = 'var(--accent-red, #f38ba8)';
+                }
+            } else {
+                if (job.rewardCredits) {
+                    rewardStr = `💰 ${job.rewardCredits.toLocaleString()}`;
+                    if (job.deposit) rewardStr += ` <span style="color:var(--accent-red,#f38ba8);">(-${job.deposit.toLocaleString()})</span>`;
+                }
+                if (job.rewardReputation) {
+                    rewardStr += ` · ⭐ ${job.rewardReputation}`;
+                }
             }
             // Status badge
             let statusColor, statusIcon;
@@ -1331,7 +1344,7 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
             html += `<td style="padding:3px 4px;color:var(--text-secondary);">${jobName}</td>`;
             html += `<td style="padding:3px 4px;color:var(--text-muted);">${serverName}</td>`;
             html += `<td style="padding:3px 4px;text-align:center;color:${statusColor};font-size:9px;">${statusIcon} ${job._status}</td>`;
-            html += `<td style="padding:3px 4px;text-align:right;color:var(--accent-green);">${rewardStr}</td>`;
+            html += `<td style="padding:3px 4px;text-align:right;color:${rewardColor};">${rewardStr}</td>`;
             html += `</tr>`;
         }
         html += `</table>`;
@@ -1375,10 +1388,20 @@ function renderMarket(data) {
     renderMarketInto(marketContainer, data, 'Market-1', 'home');
 }
 
-function renderDarkMarket(data, available) {
+function renderDarkMarket(data, available, maintenanceEndsAt, blockerServer) {
     if (available === false) {
         // Show warning but keep cached data visible below
-        let warningHtml = '<div class="warning-banner">⚠️ D4RK market server is currently unreachable (no-path-to-server).</div>';
+        let timerHtml = '';
+        if (blockerServer) timerHtml += ' (' + blockerServer + ' in maintenance';
+        if (maintenanceEndsAt) {
+            const diff = new Date(maintenanceEndsAt).getTime() - Date.now();
+            if (diff > 0) {
+                const mins = Math.ceil(diff / 60000);
+                timerHtml += (blockerServer ? ', ' : ' (') + '~' + mins + 'm remaining';
+            }
+        }
+        if (timerHtml) timerHtml += ')';
+        let warningHtml = '<div class="warning-banner">⚠️ D4RK market server is currently unreachable' + timerHtml + '.</div>';
         if (data && data.market) {
             // Render cached data below the warning
             if (data.nextJobsResetAt) bmiNextJobsResetAt = data.nextJobsResetAt;
@@ -1415,13 +1438,23 @@ async function loadMarket() {
 }
 
 async function loadDarkMarket() {
-    const { darkMarketData, darkMarketAvailable } = await chrome.storage.local.get(['darkMarketData', 'darkMarketAvailable']);
-    renderDarkMarket(darkMarketData, darkMarketAvailable);
+    const { darkMarketData, darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer } = await chrome.storage.local.get(['darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer']);
+    renderDarkMarket(darkMarketData, darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer);
 }
 
-function renderSoyuzMarket(data, available) {
+function renderSoyuzMarket(data, available, maintenanceEndsAt, blockerServer) {
     if (available === false) {
-        let warningHtml = '<div class="warning-banner">⚠️ SOYUZ market server is currently unreachable.</div>';
+        let timerHtml = '';
+        if (blockerServer) timerHtml += ' (' + blockerServer + ' in maintenance';
+        if (maintenanceEndsAt) {
+            const diff = new Date(maintenanceEndsAt).getTime() - Date.now();
+            if (diff > 0) {
+                const mins = Math.ceil(diff / 60000);
+                timerHtml += (blockerServer ? ', ' : ' (') + '~' + mins + 'm remaining';
+            }
+        }
+        if (timerHtml) timerHtml += ')';
+        let warningHtml = '<div class="warning-banner">⚠️ SOYUZ market server is currently unreachable' + timerHtml + '.</div>';
         if (data && data.market) {
             if (data.nextJobsResetAt) soyuzNextJobsResetAt = data.nextJobsResetAt;
             if (data.market.marketName) {
@@ -1449,8 +1482,8 @@ function renderSoyuzMarket(data, available) {
 }
 
 async function loadSoyuzMarket() {
-    const { soyuzMarketData, soyuzMarketAvailable } = await chrome.storage.local.get(['soyuzMarketData', 'soyuzMarketAvailable']);
-    renderSoyuzMarket(soyuzMarketData, soyuzMarketAvailable);
+    const { soyuzMarketData, soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer } = await chrome.storage.local.get(['soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer']);
+    renderSoyuzMarket(soyuzMarketData, soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer);
 }
 
 // Request all markets — sequential to avoid get.lots/get.jobs confusion
@@ -1559,7 +1592,7 @@ async function refreshSoyuzMarketData() {
 refreshSoyuzMarketBtn.addEventListener('click', () => refreshSoyuzMarketData());
 
 // On popup open: load cached market data (no WS requests)
-chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'soyuzMarketData', 'soyuzMarketAvailable'], (result) => {
+chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer', 'soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer'], (result) => {
     if (result.marketData) {
         if (result.marketData.nextJobsResetAt) coreNextJobsResetAt = result.marketData.nextJobsResetAt;
         if (result.marketData.market && result.marketData.market.marketName) {
@@ -1584,7 +1617,7 @@ chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable',
                 if (opt) opt.textContent = TIMER_LABELS.dark_jobs;
             }
         }
-        renderDarkMarket(result.darkMarketData || null, result.darkMarketAvailable);
+        renderDarkMarket(result.darkMarketData || null, result.darkMarketAvailable, result.darkMarketMaintenanceEndsAt, result.darkMarketBlockerServer);
     } else {
         darkMarketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
     }
@@ -1599,7 +1632,7 @@ chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable',
                 if (opt) opt.textContent = TIMER_LABELS.soyuz_jobs;
             }
         }
-        renderSoyuzMarket(result.soyuzMarketData || null, result.soyuzMarketAvailable);
+        renderSoyuzMarket(result.soyuzMarketData || null, result.soyuzMarketAvailable, result.soyuzMarketMaintenanceEndsAt, result.soyuzMarketBlockerServer);
     } else {
         soyuzMarketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
     }
@@ -3254,10 +3287,10 @@ function switchAutoJobsTab(market) {
 
 // Render job types from cached market data
 async function renderAutoJobsTabs() {
-    const { marketData, darkMarketData, soyuzMarketData } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+    const { marketData, darkMarketData, darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer, soyuzMarketData, soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer', 'soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer']);
     renderAutoJobsMarket(autoJobsContentHome, marketData, 'home');
-    renderAutoJobsMarket(autoJobsContentDark, darkMarketData, 'dark');
-    renderAutoJobsMarket(autoJobsContentSoyuz, soyuzMarketData, 'soyuz');
+    renderAutoJobsMarket(autoJobsContentDark, darkMarketData, 'dark', darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer);
+    renderAutoJobsMarket(autoJobsContentSoyuz, soyuzMarketData, 'soyuz', soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer);
     // Update tab labels with market names
     if (marketData && marketData.market && marketData.market.marketName) {
         autoJobsTabHome.textContent = '🏠 ' + marketData.market.marketName;
@@ -3270,10 +3303,25 @@ async function renderAutoJobsTabs() {
     }
 }
 
-function renderAutoJobsMarket(container, data, marketKey) {
+function renderAutoJobsMarket(container, data, marketKey, marketAvailable, maintenanceEndsAt, blockerServer) {
     container.innerHTML = '';
+    // Show maintenance warning for unreachable markets
+    if (marketAvailable === false) {
+        let timerHtml = '';
+        if (blockerServer) timerHtml += ' (' + blockerServer + ' in maintenance';
+        if (maintenanceEndsAt) {
+            const diff = new Date(maintenanceEndsAt).getTime() - Date.now();
+            if (diff > 0) {
+                const mins = Math.ceil(diff / 60000);
+                timerHtml += (blockerServer ? ', ' : ' (') + '~' + mins + 'm remaining';
+            }
+        }
+        if (timerHtml) timerHtml += ')';
+        const marketLabel = marketKey === 'dark' ? 'D4RK' : marketKey === 'soyuz' ? 'SOYUZ' : 'HOME';
+        container.insertAdjacentHTML('beforeend', '<div class="warning-banner">⚠️ ' + marketLabel + ' market server is currently unreachable' + timerHtml + '.</div>');
+    }
     if (!data || (!data.jobs && !data.recentJobs)) {
-        container.innerHTML = '<div class="auto-jobs-no-jobs">No jobs available. Click 🔄 to refresh market data.</div>';
+        container.insertAdjacentHTML('beforeend', '<div class="auto-jobs-no-jobs">No jobs available. Click 🔄 to refresh market data.</div>');
         return;
     }
 
@@ -3626,7 +3674,7 @@ autoFinishAllJobsToggle.addEventListener('change', async () => {
     chrome.runtime.sendMessage({ action: "scheduleAutoFinishAll" }).catch(() => {});
 });
 
-// --- Auto Clear Generated IPs ---
+// --- Auto Clear IPs ---
 const autoClearIpsToggle = document.getElementById('autoClearIpsToggle');
 chrome.storage.sync.get('autoClearIpsEnabled', (data) => {
     autoClearIpsToggle.checked = !!data.autoClearIpsEnabled;
@@ -3636,9 +3684,9 @@ autoClearIpsToggle.addEventListener('change', async () => {
     const enabled = autoClearIpsToggle.checked;
     await chrome.storage.sync.set({ autoClearIpsEnabled: enabled });
     if (enabled) {
-        addAutoJobLog('🧹 Auto Clear Generated IPs enabled', 'info');
+        addAutoJobLog('🧹 Auto Clear IPs enabled', 'info');
     } else {
-        addAutoJobLog('🧹 Auto Clear Generated IPs disabled', 'warn');
+        addAutoJobLog('🧹 Auto Clear IPs disabled', 'warn');
     }
     chrome.runtime.sendMessage({ action: "scheduleAutoClearIps" }).catch(() => {});
 });
@@ -3912,7 +3960,15 @@ function createDebugJobRow(job) {
     info.textContent = `${job.name} — ${job.serverName}`;
     row.appendChild(info);
 
-    if (job.reward) {
+    if (job.status === 'failed' || job.status === 'skipped') {
+        const penaltyVal = job.reputationPenalty || (job.reward && job.reward.deposit) || job.deposit || 0;
+        if (penaltyVal > 0) {
+            const penEl = document.createElement('span');
+            penEl.style.cssText = 'font-size:9px;color:var(--accent-red, #f38ba8);white-space:nowrap;';
+            penEl.textContent = `-${penaltyVal}`;
+            row.appendChild(penEl);
+        }
+    } else if (job.reward) {
         const rewardEl = document.createElement('span');
         rewardEl.style.cssText = 'font-size:9px;color:var(--accent-green);white-space:nowrap;';
         const dep = job.reward.deposit ? ` (-${job.reward.deposit})` : '';
@@ -3960,13 +4016,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
             if (!change) return false;
             const oldReset = change.oldValue && change.oldValue.nextJobsResetAt;
             const newReset = change.newValue && change.newValue.nextJobsResetAt;
+            console.log ("old reset: " + oldReset);
+            console.log ("new reset: " + newReset);
             return newReset && newReset !== oldReset;
         };
         const homeReset = checkReset(changes.marketData);
         const darkReset = checkReset(changes.darkMarketData);
         const soyuzReset = checkReset(changes.soyuzMarketData);
         if (homeReset || darkReset || soyuzReset) {
-            // Clear old tracker/completed results synchronously first, then persist + render
+            const resetMarkets = [homeReset && 'HOME', darkReset && 'D4RK', soyuzReset && 'SOYUZ'].filter(Boolean).join(', ');
+            addAutoJobLog('Job reset detected (' + resetMarkets + ') — clearing old tracker/results', 'info');
             autoJobsTracker = autoJobsTracker.filter(j => {
                 if (homeReset && (j.marketKey || 'home') === 'home') return false;
                 if (darkReset && j.marketKey === 'dark') return false;

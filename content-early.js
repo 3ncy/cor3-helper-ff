@@ -238,7 +238,7 @@ var webVersion = null;
             // Minigame sockets (ice-wall-break, etc.) should NOT be tracked as the
             // active game socket — they handle their own WS protocol and would
             // interfere with command sending if promoted to activeSocket.
-            var isMinigameSocket = url.includes('ice-wall-break') || url.includes('minigame');
+            var isMinigameSocket = url.includes('ice-wall-break') || url.includes('minigame') || url.includes('hack') || url.includes('games');
             ws.__cor3IsMinigame = isMinigameSocket;
 
             if (url.includes('cor3') || url.includes('corie')) {
@@ -254,6 +254,14 @@ var webVersion = null;
                     try {
                         if (typeof data === 'string') {
                             window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: data }, '*');
+                        } else if (data instanceof ArrayBuffer || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(data))) {
+                            decodeBinaryMsg(data, function (str) {
+                                if (str) window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                            });
+                        } else if (data instanceof Blob) {
+                            decodeBinaryMsg(data, function (str) {
+                                if (str) window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                            });
                         }
                     } catch (e) { /* silent */ }
                     return origSend(data);
@@ -261,7 +269,6 @@ var webVersion = null;
 
                 ws.addEventListener('message', function (event) {
                     try {
-                        // Only promote non-minigame sockets to activeSocket
                         if (!isMinigameSocket) {
                             if (activeSocket !== ws) {
                                 console.log('[COR3 Helper] Active socket changed to:', ws.__cor3Url);
@@ -269,7 +276,14 @@ var webVersion = null;
                             }
                             socketLastActivity.set(ws, Date.now());
                         }
-                        handleWsMessage(event.data, ws);
+                        var raw = event.data;
+                        if (raw instanceof ArrayBuffer || raw instanceof Blob || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(raw) && !(raw instanceof DataView))) {
+                            decodeBinaryMsg(raw, function (str) {
+                                if (str) handleWsMessage(str, ws);
+                            });
+                        } else {
+                            handleWsMessage(raw, ws);
+                        }
                     } catch (e) {
                         // silent
                     }
@@ -313,6 +327,25 @@ var webVersion = null;
     });
 
     window.WebSocket = WebSocketProxy;
+
+    function decodeBinaryMsg(raw, cb) {
+        var codec = window.__cor3MsgpackCodec;
+        if (!codec) { cb(null); return; }
+        if (raw instanceof Blob) {
+            raw.arrayBuffer().then(function (buf) {
+                try {
+                    var pkt = codec.decode(new Uint8Array(buf));
+                    cb(codec.packetToString(pkt));
+                } catch (e) { cb(null); }
+            }).catch(function () { cb(null); });
+            return;
+        }
+        try {
+            var u8 = (raw instanceof ArrayBuffer) ? new Uint8Array(raw) : raw;
+            var pkt = codec.decode(u8);
+            cb(codec.packetToString(pkt));
+        } catch (e) { cb(null); }
+    }
 
     function handleWsMessage(rawData, socket) {
         if (typeof rawData !== 'string') return;
@@ -622,13 +655,14 @@ var webVersion = null;
         }
 
         // Intercept network-map responses (endpoint set success/failure)
-        // detect no-path-to-server and server-in-maintenance errors
+        // detect no-path-to-server, server-in-maintenance, and market-not-reachable errors
         if (eventName === 'network-map' && payload && payload.event) {
             if (payload.event.action === 'set.endpoint') {
-                if (payload.error && (payload.error.message === 'no-path-to-server' || payload.error.message === 'server-in-maintenance')) {
-                    console.log('[COR3 Helper] Server unreachable: ' + payload.error.message + ' (dark-pt: ' + !!window.__cor3DarkMarketPathThrough + ', soyuz-pt: ' + !!window.__cor3SoyuzMarketPathThrough + ')');
-                    // During path-through, suppress the unreachable message for intermediate servers
-                    // The path-through logic will post it if the final retry also fails
+                var errMsg = payload.error && payload.error.message;
+                var isUnreachableErr = errMsg === 'no-path-to-server' || errMsg === 'server-in-maintenance' || errMsg === 'market-not-reachable';
+                if (payload.error && isUnreachableErr) {
+                    console.log('[COR3 Helper] Server unreachable: ' + errMsg + ' (dark-pt: ' + !!window.__cor3DarkMarketPathThrough + ', soyuz-pt: ' + !!window.__cor3SoyuzMarketPathThrough + ')');
+                    // During path-through, forward as ENDPOINT_RESULT for the path-through handler to deal with
                     if (window.__cor3DarkMarketPathThrough || window.__cor3SoyuzMarketPathThrough) {
                         window.postMessage({
                             type: 'COR3_WS_ENDPOINT_RESULT',
@@ -636,17 +670,11 @@ var webVersion = null;
                             error: payload.error
                         }, '*');
                     } else if (window.__cor3SoyuzMarketPending) {
-                        window.postMessage({
-                            type: 'COR3_WS_SOYUZ_MARKET_UNREACHABLE',
-                            error: payload.error.message,
-                            serverId: payload.error.serverId
-                        }, '*');
+                        // SOYUZ market refresh failed — fetch network-map for maintenance blocker
+                        __cor3PostUnreachable('soyuz', null, SOYUZ_FULL_PATH);
                     } else {
-                        window.postMessage({
-                            type: 'COR3_WS_DARK_MARKET_UNREACHABLE',
-                            error: payload.error.message,
-                            serverId: payload.error.serverId
-                        }, '*');
+                        // D4RK market refresh failed — fetch network-map for maintenance blocker
+                        __cor3PostUnreachable('dark', null, DARK_FULL_PATH);
                     }
                 } else {
                     var success = !payload.error;
@@ -1009,17 +1037,19 @@ var webVersion = null;
     var wsSendFlushTimer = null;
 
     function wsSendRaw(msg) {
-        // NOTE: Outbound WS logging is handled by the ws.send() intercept in the Proxy construct.
-        // No need to post COR3_WS_LOG here — it would cause duplicate entries.
+        var toSend = msg;
+        var codec = window.__cor3MsgpackCodec;
+        if (codec && codec.isReady() && typeof msg === 'string') {
+            var buf = codec.stringToPacketBuffer(msg);
+            if (buf) toSend = buf;
+        }
 
-        // Prefer the activeSocket if it's still open
         if (activeSocket && activeSocket.readyState === OrigWebSocket.OPEN) {
-            activeSocket.send(msg);
+            activeSocket.send(toSend);
             wsSendLastTime = Date.now();
             return true;
         }
 
-        // Fall back to most recently active socket
         let bestSocket = null;
         let bestTime = 0;
         for (const ws of trackedSockets) {
@@ -1034,7 +1064,7 @@ var webVersion = null;
 
         if (bestSocket) {
             activeSocket = bestSocket;
-            bestSocket.send(msg);
+            bestSocket.send(toSend);
             wsSendLastTime = Date.now();
             return true;
         }
@@ -1384,6 +1414,72 @@ var webVersion = null;
         });
     }
 
+    // Full path (all servers) for maintenance checking — includes non-hackable servers
+    var DARK_FULL_PATH = [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'D4RK RM7CE', id: '019d29c5-4b37-7436-aef9-89af09560af3' },
+        { name: 'D4RK RM7MI', id: DARK_SERVER_ID }
+    ];
+    var SOYUZ_FULL_PATH = [
+        { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' },
+        { name: 'RM7-N2ECP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a105' },
+        { name: 'RM7-N2L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a101' },
+        { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
+        { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
+        { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' },
+        { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
+        { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' }
+    ];
+
+    // Fetch network-map and find the first server on `pathServers` that is in maintenance.
+    // Returns Promise<{blockerName, maintenanceEndsAt}> or null if none found.
+    function __cor3FetchMaintenanceBlocker(pathServers) {
+        return new Promise(function (resolve) {
+            var getMap = '42["event",{"event":{"name":"network-map","action":"get.map"},"data":{}}]';
+            wsSend(getMap);
+            var done = false;
+            function onMap(evt) {
+                if (done) return;
+                if (evt.data && evt.data.type === 'COR3_WS_NETWORK_MAP' && evt.data.servers) {
+                    done = true;
+                    window.removeEventListener('message', onMap);
+                    clearTimeout(mapTimer);
+                    var servers = evt.data.servers;
+                    for (var i = 0; i < pathServers.length; i++) {
+                        var info = servers[pathServers[i].id];
+                        if (info && info.isInMaintenance) {
+                            resolve({ blockerName: pathServers[i].name, maintenanceEndsAt: info.maintenanceEndsAt || null });
+                            return;
+                        }
+                    }
+                    resolve(null);
+                }
+            }
+            window.addEventListener('message', onMap);
+            var mapTimer = setTimeout(function () {
+                if (!done) {
+                    done = true;
+                    window.removeEventListener('message', onMap);
+                    resolve(null);
+                }
+            }, 8000);
+        });
+    }
+
+    // Post an UNREACHABLE message with maintenance info fetched from network-map
+    function __cor3PostUnreachable(marketType, serverName, pathServers) {
+        var msgType = marketType === 'soyuz' ? 'COR3_WS_SOYUZ_MARKET_UNREACHABLE' : 'COR3_WS_DARK_MARKET_UNREACHABLE';
+        __cor3FetchMaintenanceBlocker(pathServers).then(function (blocker) {
+            window.postMessage({
+                type: msgType,
+                error: 'no-path-to-server',
+                blockerServerName: blocker ? blocker.blockerName : (serverName || null),
+                maintenanceEndsAt: blocker ? blocker.maintenanceEndsAt : null
+            }, '*');
+        });
+    }
+
     // Run path-through: ensure access to intermediate servers, then retry D4RK endpoint
     function __cor3DarkMarketPathThroughRetry() {
         window.__cor3DarkMarketPathThrough = true;
@@ -1446,11 +1542,7 @@ var webVersion = null;
                     if (evt.data.success === false) {
                         window.__cor3DarkMarketPathThrough = false;
                         console.log('[COR3 Helper] Path-through: ' + server.name + ' unreachable — aborting');
-                        window.postMessage({
-                            type: 'COR3_WS_DARK_MARKET_UNREACHABLE',
-                            error: 'no-path-to-server',
-                            serverId: DARK_SERVER_ID
-                        }, '*');
+                        __cor3PostUnreachable('dark', server.name, DARK_FULL_PATH);
                         return;
                     }
                     // Endpoint set — ensure access
@@ -1460,11 +1552,7 @@ var webVersion = null;
                     }).catch(function (e) {
                         window.__cor3DarkMarketPathThrough = false;
                         console.log('[COR3 Helper] Path-through: ' + server.name + ' access failed — ' + e.message);
-                        window.postMessage({
-                            type: 'COR3_WS_DARK_MARKET_UNREACHABLE',
-                            error: 'no-path-to-server',
-                            serverId: DARK_SERVER_ID
-                        }, '*');
+                        __cor3PostUnreachable('dark', server.name, DARK_FULL_PATH);
                     });
                 }
             }
@@ -1479,11 +1567,7 @@ var webVersion = null;
                         processNextServer();
                     }).catch(function () {
                         window.__cor3DarkMarketPathThrough = false;
-                        window.postMessage({
-                            type: 'COR3_WS_DARK_MARKET_UNREACHABLE',
-                            error: 'no-path-to-server',
-                            serverId: DARK_SERVER_ID
-                        }, '*');
+                        __cor3PostUnreachable('dark', server.name, DARK_FULL_PATH);
                     });
                 }
             }, 10000);
@@ -1657,11 +1741,7 @@ var webVersion = null;
                     if (evt.data.success === false) {
                         window.__cor3SoyuzMarketPathThrough = false;
                         console.log('[COR3 Helper] Path-through: ' + server.name + ' unreachable — aborting');
-                        window.postMessage({
-                            type: 'COR3_WS_SOYUZ_MARKET_UNREACHABLE',
-                            error: 'no-path-to-server',
-                            serverId: SOYUZ_SERVER_ID
-                        }, '*');
+                        __cor3PostUnreachable('soyuz', server.name, SOYUZ_FULL_PATH);
                         return;
                     }
                     __cor3EnsureServerAccess(server.id, server.name).then(function () {
@@ -1670,11 +1750,7 @@ var webVersion = null;
                     }).catch(function (e) {
                         window.__cor3SoyuzMarketPathThrough = false;
                         console.log('[COR3 Helper] Path-through: ' + server.name + ' access failed — ' + e.message);
-                        window.postMessage({
-                            type: 'COR3_WS_SOYUZ_MARKET_UNREACHABLE',
-                            error: 'no-path-to-server',
-                            serverId: SOYUZ_SERVER_ID
-                        }, '*');
+                        __cor3PostUnreachable('soyuz', server.name, SOYUZ_FULL_PATH);
                     });
                 }
             }
@@ -1688,11 +1764,7 @@ var webVersion = null;
                         processNextServer();
                     }).catch(function () {
                         window.__cor3SoyuzMarketPathThrough = false;
-                        window.postMessage({
-                            type: 'COR3_WS_SOYUZ_MARKET_UNREACHABLE',
-                            error: 'no-path-to-server',
-                            serverId: SOYUZ_SERVER_ID
-                        }, '*');
+                        __cor3PostUnreachable('soyuz', server.name, SOYUZ_FULL_PATH);
                     });
                 }
             }, 10000);
