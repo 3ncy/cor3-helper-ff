@@ -115,7 +115,8 @@ const TIMER_LABELS = {
     daily: 'Daily Ops',
     home_jobs: 'Market-1 Jobs Reset',
     dark_jobs: 'Market-2 Jobs Reset',
-    soyuz_jobs: 'Market-3 Jobs Reset'
+    soyuz_jobs: 'Market-3 Jobs Reset',
+    usol_jobs: 'Market-4 Jobs Reset'
 };
 
 // Dynamically populate expedition options in alarm timer select
@@ -311,6 +312,7 @@ const dailyLastUpdated = document.getElementById('dailyLastUpdated');
 const coreMarketLastUpdated = document.getElementById('coreMarketLastUpdated');
 const darkMarketLastUpdated = document.getElementById('darkMarketLastUpdated');
 const soyuzMarketLastUpdated = document.getElementById('soyuzMarketLastUpdated');
+const usolMarketLastUpdated = document.getElementById('usolMarketLastUpdated');
 const expeditionLastUpdated = document.getElementById('expeditionLastUpdated');
 const decisionLastUpdated = document.getElementById('decisionLastUpdated');
 const inventoryLastUpdated = document.getElementById('inventoryLastUpdated');
@@ -341,6 +343,7 @@ function refreshAllTimestamps() {
     showLastUpdated(coreMarketLastUpdated, 'marketDataUpdatedAt');
     showLastUpdated(darkMarketLastUpdated, 'darkMarketDataUpdatedAt');
     showLastUpdated(soyuzMarketLastUpdated, 'soyuzMarketDataUpdatedAt');
+    showLastUpdated(usolMarketLastUpdated, 'usolMarketDataUpdatedAt');
     showLastUpdated(expeditionLastUpdated, 'expeditionsDataUpdatedAt');
     showLastUpdated(decisionLastUpdated, 'expeditionsDataUpdatedAt');
     if (inventoryLastUpdated) showLastUpdated(inventoryLastUpdated, 'stashDataUpdatedAt');
@@ -1133,17 +1136,21 @@ refreshDailyBtn.addEventListener('click', () => fetchDailyOps());
 const marketContainer = document.getElementById('marketContainer');
 const darkMarketContainer = document.getElementById('darkMarketContainer');
 const soyuzMarketContainer = document.getElementById('soyuzMarketContainer');
+const usolMarketContainer = document.getElementById('usolMarketContainer');
 const refreshMarketBtn = document.getElementById('refreshMarketBtn');
 const refreshDarkMarketBtn = document.getElementById('refreshDarkMarketBtn');
 const refreshSoyuzMarketBtn = document.getElementById('refreshSoyuzMarketBtn');
+const refreshUsolMarketBtn = document.getElementById('refreshUsolMarketBtn');
 const coreMarketLabel = document.getElementById('coreMarketLabel');
 const darkMarketLabel = document.getElementById('darkMarketLabel');
 const soyuzMarketLabel = document.getElementById('soyuzMarketLabel');
+const usolMarketLabel = document.getElementById('usolMarketLabel');
 
 // Market names from WS data
 let coreMarketName = null;
 let darkMarketName = null;
 let soyuzMarketName = null;
+let usolMarketName = null;
 
 function formatTimeRemaining(dateStr) {
     if (!dateStr) return '--';
@@ -1172,6 +1179,8 @@ function updateMarketLabel(labelEl, wsName, placeholder, icon) {
     } else {
         if (icon == '☭') {
             labelEl.innerHTML = `<span style="color:#c33b3b;margin-left:3px;margin-right:1px">☭</span> ${text}`;
+        } else if (icon == '☮') {
+            labelEl.innerHTML = `<span style="color:#2592A7;margin-right:1px">☮</span> ${text}`;
         } else {
             labelEl.textContent = `${icon} ${text}`;
         }
@@ -1198,6 +1207,8 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
         html += '<img src="factions/bmi_faction-96x96.png" class="faction-icon" alt="">';
     } else if (idPrefix == 'soyuz') {
         html += '<img src="factions/soyuz_faction-96x96.png" class="faction-icon" alt="">';
+    } else if (idPrefix == 'usol') {
+        html += '<img src="factions/usol_faction-96x96.png" class="faction-icon" alt="">';
     }
 
     // Credits
@@ -1385,6 +1396,7 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
 let coreNextJobsResetAt = null;
 let bmiNextJobsResetAt = null;
 let soyuzNextJobsResetAt = null;
+let usolNextJobsResetAt = null;
 
 function renderMarket(data) {
     if (data && data.nextJobsResetAt) coreNextJobsResetAt = data.nextJobsResetAt;
@@ -1501,13 +1513,52 @@ async function loadSoyuzMarket() {
     renderSoyuzMarket(soyuzMarketData, soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer);
 }
 
+function renderUsolMarket(data, available, maintenanceEndsAt, blockerServer) {
+    if (available === false) {
+        let timerHtml = '';
+        if (blockerServer) timerHtml += ' (' + blockerServer + ' in maintenance';
+        if (maintenanceEndsAt) timerHtml += ' — ends ' + formatTimeRemaining(maintenanceEndsAt);
+        if (blockerServer || maintenanceEndsAt) timerHtml += ')';
+        const warningHtml = '<div style="color:var(--accent-orange);font-size:10px;margin-bottom:4px;">⚠️ USOL market unreachable' + timerHtml + '</div>';
+        if (data && data.market) {
+            if (data.nextJobsResetAt) usolNextJobsResetAt = data.nextJobsResetAt;
+            if (data.market.marketName) {
+                usolMarketName = data.market.marketName;
+                updateMarketLabel(usolMarketLabel, usolMarketName, 'Market-4', '☮');
+            }
+            renderMarketInto(usolMarketContainer, data, 'Market-4 (cached)', 'usol');
+            usolMarketContainer.insertAdjacentHTML('afterbegin', warningHtml);
+        } else {
+            usolMarketContainer.innerHTML = warningHtml + '<div class="no-decisions">No cached market data available.</div>';
+        }
+        return;
+    }
+    if (data && data.nextJobsResetAt) usolNextJobsResetAt = data.nextJobsResetAt;
+    if (data && data.market && data.market.marketName) {
+        usolMarketName = data.market.marketName;
+        updateMarketLabel(usolMarketLabel, usolMarketName, 'Market-4', '☮');
+        TIMER_LABELS.usol_jobs = usolMarketName + ' Jobs Reset';
+        const opt = alarmTimerSelect.querySelector('option[value="usol_jobs"]');
+        if (opt) opt.textContent = TIMER_LABELS.usol_jobs;
+        renderPinnedTimers();
+        renderAlarmList();
+    }
+    renderMarketInto(usolMarketContainer, data, 'Market-4', 'usol');
+}
+
+async function loadUsolMarket() {
+    const { usolMarketData, usolMarketAvailable, usolMarketMaintenanceEndsAt, usolMarketBlockerServer } = await chrome.storage.local.get(['usolMarketData', 'usolMarketAvailable', 'usolMarketMaintenanceEndsAt', 'usolMarketBlockerServer']);
+    renderUsolMarket(usolMarketData, usolMarketAvailable, usolMarketMaintenanceEndsAt, usolMarketBlockerServer);
+}
+
 // Request all markets — sequential to avoid get.lots/get.jobs confusion
-// content-early.js chains HOME → D4RK → SOYUZ internally via callbacks
+// content-early.js chains HOME → D4RK → SOYUZ → USOL internally via callbacks
 async function requestMarketData() {
     marketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
     darkMarketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
     soyuzMarketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
-    await chrome.storage.local.remove(['marketData', 'darkMarketData', 'darkMarketAvailable', 'soyuzMarketData', 'soyuzMarketAvailable']);
+    usolMarketContainer.innerHTML = '<div class="no-decisions">Requesting market data...</div>';
+    await chrome.storage.local.remove(['marketData', 'darkMarketData', 'darkMarketAvailable', 'soyuzMarketData', 'soyuzMarketAvailable', 'usolMarketData', 'usolMarketAvailable']);
 
     // Step 1: HOME
     try {
@@ -1562,6 +1613,24 @@ async function requestMarketData() {
     });
     await loadSoyuzMarket();
     refreshAllTimestamps();
+
+    // Step 4: USOL (sequential — only after SOYUZ is done)
+    try {
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestUsolMarket" });
+    } catch (e) {}
+    await new Promise((resolve) => {
+        let done = false;
+        const poll = setInterval(async () => {
+            const data = await chrome.storage.local.get(['usolMarketData', 'usolMarketAvailable']);
+            if ((data.usolMarketData && data.usolMarketData.market) || data.usolMarketAvailable === false) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
+            }
+        }, 500);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 20000);
+    });
+    await loadUsolMarket();
+    refreshAllTimestamps();
 }
 
 async function refreshMarketData() {
@@ -1606,8 +1675,22 @@ async function refreshSoyuzMarketData() {
 
 refreshSoyuzMarketBtn.addEventListener('click', () => refreshSoyuzMarketData());
 
+async function refreshUsolMarketData() {
+    usolMarketContainer.innerHTML = '<div class="no-decisions">Refreshing market data...</div>';
+    try {
+        const tab = await getCor3Tab();
+        if (!tab) throw new Error('No cor3.gg tab');
+        await chrome.tabs.sendMessage(tab.id, { action: "refreshUsolMarket" });
+        setTimeout(() => { loadUsolMarket(); refreshAllTimestamps(); }, 5000);
+    } catch (e) {
+        setTimeout(() => { loadUsolMarket(); refreshAllTimestamps(); }, 500);
+    }
+}
+
+refreshUsolMarketBtn.addEventListener('click', () => refreshUsolMarketData());
+
 // On popup open: load cached market data (no WS requests)
-chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer', 'soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer'], (result) => {
+chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer', 'soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer', 'usolMarketData', 'usolMarketAvailable', 'usolMarketMaintenanceEndsAt', 'usolMarketBlockerServer'], (result) => {
     if (result.marketData) {
         if (result.marketData.nextJobsResetAt) coreNextJobsResetAt = result.marketData.nextJobsResetAt;
         if (result.marketData.market && result.marketData.market.marketName) {
@@ -1650,6 +1733,21 @@ chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable',
         renderSoyuzMarket(result.soyuzMarketData || null, result.soyuzMarketAvailable, result.soyuzMarketMaintenanceEndsAt, result.soyuzMarketBlockerServer);
     } else {
         soyuzMarketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
+    }
+    if (result.usolMarketData || result.usolMarketAvailable === false) {
+        if (result.usolMarketData) {
+            if (result.usolMarketData.nextJobsResetAt) usolNextJobsResetAt = result.usolMarketData.nextJobsResetAt;
+            if (result.usolMarketData.market && result.usolMarketData.market.marketName) {
+                usolMarketName = result.usolMarketData.market.marketName;
+                updateMarketLabel(usolMarketLabel, usolMarketName, 'Market-4', '☮');
+                TIMER_LABELS.usol_jobs = usolMarketName + ' Jobs Reset';
+                const opt = alarmTimerSelect.querySelector('option[value="usol_jobs"]');
+                if (opt) opt.textContent = TIMER_LABELS.usol_jobs;
+            }
+        }
+        renderUsolMarket(result.usolMarketData || null, result.usolMarketAvailable, result.usolMarketMaintenanceEndsAt, result.usolMarketBlockerServer);
+    } else {
+        usolMarketContainer.innerHTML = '<div class="no-decisions">No market data cached. Click 🔄 to refresh.</div>';
     }
 });
 
@@ -1745,6 +1843,28 @@ async function refreshMarket3Only() {
     refreshAllTimestamps();
 }
 
+async function refreshMarket4Only() {
+    usolMarketContainer.innerHTML = '<div class="no-decisions">Refreshing Market-4...</div>';
+    await chrome.storage.local.remove(['usolMarketData', 'usolMarketAvailable']);
+    try {
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "refreshUsolMarket" });
+    } catch (e) {}
+    // Wait for either usolMarketData (success) or usolMarketAvailable (error/unreachable)
+    await new Promise((resolve) => {
+        let done = false;
+        const poll = setInterval(async () => {
+            const data = await chrome.storage.local.get(['usolMarketData', 'usolMarketAvailable']);
+            if (data.usolMarketData || data.usolMarketAvailable !== undefined) {
+                clearInterval(poll); if (!done) { done = true; resolve(); }
+            }
+        }, 400);
+        setTimeout(() => { clearInterval(poll); if (!done) { done = true; resolve(); } }, 15000);
+    });
+    await loadUsolMarket();
+    refreshAllTimestamps();
+}
+
 async function refreshExpeditionsOnly() {
     expeditionInfoContainer.innerHTML = '<div class="no-decisions">Loading expedition data...</div>';
     await chrome.storage.local.remove(['expeditionsData', 'expeditionDecisions']);
@@ -1818,6 +1938,10 @@ refreshAllBtn.addEventListener('click', async () => {
         await executeRefreshStep('market3', refreshMarket3Only);
         await humanDelay();
 
+        // 5b. Market-4 (USOL)
+        await executeRefreshStep('market4', refreshMarket4Only);
+        await humanDelay();
+
         // 6. Expeditions
         await executeRefreshStep('expeditions', refreshExpeditionsOnly);
         await humanDelay();
@@ -1875,15 +1999,16 @@ const pinDailyBtn = document.getElementById('pinDailyBtn');
 const pinCoreMarketBtn = document.getElementById('pinCoreMarketBtn');
 const pinDarkMarketBtn = document.getElementById('pinDarkMarketBtn');
 const pinSoyuzMarketBtn = document.getElementById('pinSoyuzMarketBtn');
+const pinUsolMarketBtn = document.getElementById('pinUsolMarketBtn');
 
 // State: which timers are pinned
-let pinnedTimers = { daily: false, home_jobs: false, dark_jobs: false, soyuz_jobs: false };
+let pinnedTimers = { daily: false, home_jobs: false, dark_jobs: false, soyuz_jobs: false, usol_jobs: false };
 // State: auto-refresh for market job timers
-let autoRefresh = { home_jobs: false, dark_jobs: false, soyuz_jobs: false };
+let autoRefresh = { home_jobs: false, dark_jobs: false, soyuz_jobs: false, usol_jobs: false };
 // Track if auto-refresh retry is pending
-let autoRefreshRetry = { home_jobs: null, dark_jobs: null, soyuz_jobs: null };
+let autoRefreshRetry = { home_jobs: null, dark_jobs: null, soyuz_jobs: null, usol_jobs: null };
 // Track last known timer values for zero-detection
-let lastTimerSeconds = { home_jobs: null, dark_jobs: null, soyuz_jobs: null };
+let lastTimerSeconds = { home_jobs: null, dark_jobs: null, soyuz_jobs: null, usol_jobs: null };
 
 async function loadPinnedState() {
     const data = await chrome.storage.sync.get(['pinnedTimers', 'autoRefresh']);
@@ -1902,11 +2027,12 @@ function updatePinButtons() {
     pinCoreMarketBtn.classList.toggle('pinned', !!pinnedTimers.home_jobs);
     pinDarkMarketBtn.classList.toggle('pinned', !!pinnedTimers.dark_jobs);
     pinSoyuzMarketBtn.classList.toggle('pinned', !!pinnedTimers.soyuz_jobs);
+    pinUsolMarketBtn.classList.toggle('pinned', !!pinnedTimers.usol_jobs);
 }
 
 function renderPinnedTimers() {
     // Check if any timer is pinned (including expedition timers)
-    let anyPinned = pinnedTimers.daily || pinnedTimers.home_jobs || pinnedTimers.dark_jobs || pinnedTimers.soyuz_jobs;
+    let anyPinned = pinnedTimers.daily || pinnedTimers.home_jobs || pinnedTimers.dark_jobs || pinnedTimers.soyuz_jobs || pinnedTimers.usol_jobs;
     if (!anyPinned) {
         for (const key of Object.keys(pinnedTimers)) {
             if (key.startsWith('exp_') && pinnedTimers[key]) { anyPinned = true; break; }
@@ -1979,6 +2105,26 @@ function renderPinnedTimers() {
         pinnedTimersContainer.appendChild(row);
         row.querySelector('#autoRefreshSoyuz').addEventListener('change', async (e) => {
             autoRefresh.soyuz_jobs = e.target.checked;
+            await savePinnedState();
+            sendAutoRefreshToContent();
+        });
+    }
+
+    if (pinnedTimers.usol_jobs) {
+        const name = usolMarketName || 'Market-4';
+        const row = document.createElement('div');
+        row.className = 'pinned-timer-row';
+        row.innerHTML = `
+            <div style="width: 200%;"><span class="pinned-timer-symbol-usol">☮ </span>
+            <span class="pinned-timer-label">${name} Jobs</span></div>
+            <span class="pinned-timer-value" id="pinnedUsolJobsValue">--:--:--</span>
+            <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
+                <input type="checkbox" id="autoRefreshUsol" ${autoRefresh.usol_jobs ? 'checked' : ''}> Auto
+            </label>
+        `;
+        pinnedTimersContainer.appendChild(row);
+        row.querySelector('#autoRefreshUsol').addEventListener('change', async (e) => {
+            autoRefresh.usol_jobs = e.target.checked;
             await savePinnedState();
             sendAutoRefreshToContent();
         });
@@ -2065,6 +2211,10 @@ function updatePinnedTimerValues() {
     if (pinnedSoyuz) {
         pinnedSoyuz.textContent = soyuzNextJobsResetAt ? formatTimeRemaining(soyuzNextJobsResetAt) : '--:--:--';
     }
+    const pinnedUsol = document.getElementById('pinnedUsolJobsValue');
+    if (pinnedUsol) {
+        pinnedUsol.textContent = usolNextJobsResetAt ? formatTimeRemaining(usolNextJobsResetAt) : '--:--:--';
+    }
     // Expedition pinned timers
     document.querySelectorAll('.pinned-exp-timer').forEach(el => {
         const expId = el.dataset.expId;
@@ -2093,6 +2243,12 @@ pinDarkMarketBtn.addEventListener('click', async () => {
 });
 pinSoyuzMarketBtn.addEventListener('click', async () => {
     pinnedTimers.soyuz_jobs = !pinnedTimers.soyuz_jobs;
+    await savePinnedState();
+    updatePinButtons();
+    renderPinnedTimers();
+});
+pinUsolMarketBtn.addEventListener('click', async () => {
+    pinnedTimers.usol_jobs = !pinnedTimers.usol_jobs;
     await savePinnedState();
     updatePinButtons();
     renderPinnedTimers();
@@ -2148,6 +2304,12 @@ setInterval(() => {
         const soyuzResetEl = soyuzMarketContainer.querySelector('.soyuz-reset-timer');
         if (soyuzResetEl) {
             soyuzResetEl.textContent = `⏳ Jobs Reset: ${formatTimeRemaining(soyuzNextJobsResetAt)}`;
+        }
+    }
+    if (usolNextJobsResetAt) {
+        const usolResetEl = usolMarketContainer.querySelector('.usol-reset-timer');
+        if (usolResetEl) {
+            usolResetEl.textContent = `⏳ Jobs Reset: ${formatTimeRemaining(usolNextJobsResetAt)}`;
         }
     }
 
@@ -2215,6 +2377,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     if (changes.soyuzMarketData || changes.soyuzMarketAvailable) {
         loadSoyuzMarket();
+        refreshAllTimestamps();
+    }
+    if (changes.usolMarketData || changes.usolMarketAvailable) {
+        loadUsolMarket();
         refreshAllTimestamps();
     }
     if (changes.dailyOpsData) {
@@ -3022,7 +3188,7 @@ checkUpdateBtn.addEventListener('click', async () => {
             let html = `Updates detected:<br>${messages.join('<br>')}`;
             // Only show install instructions if extension is behind
             if (extBehind) {
-                html += `<br><a href="https://github.com/Femtoce11/cor3-helper" target="_blank" style="color:var(--accent-cyan);">Download from GitHub</a><br><span style="font-size:9px;color:var(--text-muted);">Download ZIP, extract, and reload on chrome://extensions</span>`;
+                html += `<br><a href="https://github.com/Femtoce11/cor3-helper/releases" target="_blank" style="color:var(--accent-cyan);">Download from GitHub</a><br><span style="font-size:9px;color:var(--text-muted);">Download ZIP, extract, and reload on chrome://extensions</span>`;
             }
             updateResult.innerHTML = html;
             updateResult.style.color = 'var(--accent-orange)';
@@ -3203,9 +3369,11 @@ const autoJobSolverSection = document.getElementById('autoJobSolverSection');
 const autoJobsTabHome = document.getElementById('autoJobsTabHome');
 const autoJobsTabDark = document.getElementById('autoJobsTabDark');
 const autoJobsTabSoyuz = document.getElementById('autoJobsTabSoyuz');
+const autoJobsTabUsol = document.getElementById('autoJobsTabUsol');
 const autoJobsContentHome = document.getElementById('autoJobsContentHome');
 const autoJobsContentDark = document.getElementById('autoJobsContentDark');
 const autoJobsContentSoyuz = document.getElementById('autoJobsContentSoyuz');
+const autoJobsContentUsol = document.getElementById('autoJobsContentUsol');
 const autoJobsStartBtn = document.getElementById('autoJobsStartBtn');
 const autoJobsDebugToggle = document.getElementById('autoJobsDebugToggle');
 const autoJobsDebugConsole = document.getElementById('autoJobsDebugConsole');
@@ -3231,7 +3399,8 @@ const SUPPORTED_JOB_TYPES = [
 const MARKET_IDS = {
     home: '019d3ea4-85bd-7389-904d-8f7c85841134',
     dark: '019d3ea4-85bd-7389-904d-908ba9194aa0',
-    soyuz: '019da731-2db5-7d76-9447-1ea3b9b78001'
+    soyuz: '019da731-2db5-7d76-9447-1ea3b9b78001',
+    usol: '019e4065-6ae8-760d-8724-58ab4f2cf7d7'
 };
 
 // Server priority (furthest first — matching auto-job-solver.js)
@@ -3260,7 +3429,7 @@ function isJobBugged(job) {
 
 let autoJobsRunning = false;
 let autoFinishAllActive = false;
-let autoJobsSelectedTypes = { home: [], dark: [], soyuz: [] };
+let autoJobsSelectedTypes = { home: [], dark: [], soyuz: [], usol: [] };
 let autoJobsDebugLogs = [];
 const AUTO_JOBS_MAX_LOGS = 200;
 let autoJobsTracker = []; // {jobId, name, type, server, market, status}
@@ -3290,22 +3459,26 @@ autoJobSolverToggle.addEventListener('change', async () => {
 autoJobsTabHome.addEventListener('click', () => switchAutoJobsTab('home'));
 autoJobsTabDark.addEventListener('click', () => switchAutoJobsTab('dark'));
 autoJobsTabSoyuz.addEventListener('click', () => switchAutoJobsTab('soyuz'));
+autoJobsTabUsol.addEventListener('click', () => switchAutoJobsTab('usol'));
 
 function switchAutoJobsTab(market) {
     autoJobsTabHome.classList.toggle('active', market === 'home');
     autoJobsTabDark.classList.toggle('active', market === 'dark');
     autoJobsTabSoyuz.classList.toggle('active', market === 'soyuz');
+    autoJobsTabUsol.classList.toggle('active', market === 'usol');
     autoJobsContentHome.classList.toggle('active', market === 'home');
     autoJobsContentDark.classList.toggle('active', market === 'dark');
     autoJobsContentSoyuz.classList.toggle('active', market === 'soyuz');
+    autoJobsContentUsol.classList.toggle('active', market === 'usol');
 }
 
 // Render job types from cached market data
 async function renderAutoJobsTabs() {
-    const { marketData, darkMarketData, darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer, soyuzMarketData, soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer', 'soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer']);
+    const { marketData, darkMarketData, darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer, soyuzMarketData, soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer, usolMarketData, usolMarketAvailable, usolMarketMaintenanceEndsAt, usolMarketBlockerServer } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'darkMarketAvailable', 'darkMarketMaintenanceEndsAt', 'darkMarketBlockerServer', 'soyuzMarketData', 'soyuzMarketAvailable', 'soyuzMarketMaintenanceEndsAt', 'soyuzMarketBlockerServer', 'usolMarketData', 'usolMarketAvailable', 'usolMarketMaintenanceEndsAt', 'usolMarketBlockerServer']);
     renderAutoJobsMarket(autoJobsContentHome, marketData, 'home');
     renderAutoJobsMarket(autoJobsContentDark, darkMarketData, 'dark', darkMarketAvailable, darkMarketMaintenanceEndsAt, darkMarketBlockerServer);
     renderAutoJobsMarket(autoJobsContentSoyuz, soyuzMarketData, 'soyuz', soyuzMarketAvailable, soyuzMarketMaintenanceEndsAt, soyuzMarketBlockerServer);
+    renderAutoJobsMarket(autoJobsContentUsol, usolMarketData, 'usol', usolMarketAvailable, usolMarketMaintenanceEndsAt, usolMarketBlockerServer);
     // Update tab labels with market names
     if (marketData && marketData.market && marketData.market.marketName) {
         autoJobsTabHome.textContent = '🏠 ' + marketData.market.marketName;
@@ -3315,6 +3488,9 @@ async function renderAutoJobsTabs() {
     }
     if (soyuzMarketData && soyuzMarketData.market && soyuzMarketData.market.marketName) {
         autoJobsTabSoyuz.innerHTML = '<span style="color:#c33b3b;">☭</span> ' + soyuzMarketData.market.marketName;
+    }
+    if (usolMarketData && usolMarketData.market && usolMarketData.market.marketName) {
+        autoJobsTabUsol.innerHTML = '<span style="color:#2592A7;margin-right:1px">☮</span> ' + usolMarketData.market.marketName;
     }
 }
 
@@ -3332,7 +3508,7 @@ function renderAutoJobsMarket(container, data, marketKey, marketAvailable, maint
             }
         }
         if (timerHtml) timerHtml += ')';
-        const marketLabel = marketKey === 'dark' ? 'D4RK' : marketKey === 'soyuz' ? 'SOYUZ' : 'HOME';
+        const marketLabel = marketKey === 'dark' ? 'D4RK' : marketKey === 'soyuz' ? 'SOYUZ' : marketKey === 'usol' ? 'USOL' : 'HOME';
         container.insertAdjacentHTML('beforeend', '<div class="warning-banner">⚠️ ' + marketLabel + ' market server is currently unreachable' + timerHtml + '.</div>');
     }
     if (!data || (!data.jobs && !data.recentJobs)) {
@@ -3494,6 +3670,7 @@ refreshAutoJobsBtn.addEventListener('click', async () => {
     autoJobsContentHome.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
     autoJobsContentDark.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
     autoJobsContentSoyuz.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
+    autoJobsContentUsol.innerHTML = '<div class="auto-jobs-no-jobs">Refreshing (sequential)...</div>';
     try {
         const tab = await getCor3Tab();
         if (tab) {
@@ -3538,11 +3715,11 @@ autoJobsStartBtn.addEventListener('click', async () => {
         autoJobsStartBtn.className = 'auto-jobs-btn-start stop';
 
         // Collect selected jobs from all markets (using already-cached market data)
-        const { marketData, darkMarketData, soyuzMarketData } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+        const { marketData, darkMarketData, soyuzMarketData, usolMarketData } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'usolMarketData']);
         const jobsToRun = [];
 
-        for (const marketKey of ['home', 'dark', 'soyuz']) {
-            const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+        for (const marketKey of ['home', 'dark', 'soyuz', 'usol']) {
+            const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : marketKey === 'usol' ? usolMarketData : soyuzMarketData;
             if (!md) continue;
             const selectedTypes = autoJobsSelectedTypes[marketKey] || [];
             if (selectedTypes.length === 0) continue;
@@ -3707,10 +3884,10 @@ autoClearIpsToggle.addEventListener('change', async () => {
 });
 
 // Collect all supported jobs WITHOUT filtering bugged ones (used to detect if only bugged remain)
-function collectAllSupportedJobsUnfiltered(marketData, darkMarketData, soyuzMarketData) {
+function collectAllSupportedJobsUnfiltered(marketData, darkMarketData, soyuzMarketData, usolMarketData) {
     const jobs = [];
-    for (const marketKey of ['dark', 'home', 'soyuz']) {
-        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+    for (const marketKey of ['dark', 'home', 'soyuz', 'usol']) {
+        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : marketKey === 'usol' ? usolMarketData : soyuzMarketData;
         if (!md) continue;
         const openJobs = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && SUPPORTED_JOB_TYPES.includes(j.name));
         const takenJobs = (md.recentJobs || []).filter(j => j.status === 'TAKEN' && SUPPORTED_JOB_TYPES.includes(j.name));
@@ -3722,11 +3899,11 @@ function collectAllSupportedJobsUnfiltered(marketData, darkMarketData, soyuzMark
     return jobs;
 }
 
-function collectAllSupportedJobs(marketData, darkMarketData, soyuzMarketData) {
+function collectAllSupportedJobs(marketData, darkMarketData, soyuzMarketData, usolMarketData) {
     const jobsToRun = [];
-    // D4RK market first (higher priority), then SOYUZ
-    for (const marketKey of ['dark', 'home', 'soyuz']) {
-        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+    // D4RK market first (higher priority), then SOYUZ, then USOL
+    for (const marketKey of ['dark', 'home', 'soyuz', 'usol']) {
+        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : marketKey === 'usol' ? usolMarketData : soyuzMarketData;
         if (!md) continue;
 
         const openJobs = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && SUPPORTED_JOB_TYPES.includes(j.name) && !isJobBugged(j));
@@ -3826,10 +4003,10 @@ let _renderDebugJobsId = 0;
 async function renderDebugJobs() {
     const renderId = ++_renderDebugJobsId;
 
-    const storageData = await chrome.storage.local.get(['autoJobsCompletedResults', 'marketData', 'darkMarketData', 'soyuzMarketData', 'autoJobsTracker']);
+    const storageData = await chrome.storage.local.get(['autoJobsCompletedResults', 'marketData', 'darkMarketData', 'soyuzMarketData', 'usolMarketData', 'autoJobsTracker']);
     if (renderId !== _renderDebugJobsId) return;
 
-    const { autoJobsCompletedResults, marketData, darkMarketData, soyuzMarketData } = storageData;
+    const { autoJobsCompletedResults, marketData, darkMarketData, soyuzMarketData, usolMarketData } = storageData;
 
     // Always use the freshest tracker from storage to avoid stale in-memory state
     if (storageData.autoJobsTracker) {
@@ -3854,7 +4031,8 @@ async function renderDebugJobs() {
     const marketSources = [
         { key: 'home', label: '🏠 HOME', data: marketData },
         { key: 'dark', label: '🌑 D4RK', data: darkMarketData },
-        { key: 'soyuz', label: '<span style="color:#c33b3b;margin-left:2px;margin-right:2px">☭</span> SOYUZ', data: soyuzMarketData }
+        { key: 'soyuz', label: '<span style="color:#c33b3b;margin-left:2px;margin-right:2px">☭</span> SOYUZ', data: soyuzMarketData },
+        { key: 'usol', label: '<span style="color:#2592A7;margin-right:2px">☮</span> USOL', data: usolMarketData }
     ];
 
     let hasAny = false;
@@ -4025,7 +4203,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 
     // Re-render job tabs and debug jobs when market data changes
-    if (changes.marketData || changes.darkMarketData || changes.soyuzMarketData) {
+    if (changes.marketData || changes.darkMarketData || changes.soyuzMarketData || changes.usolMarketData) {
         // Clear completed results per-market BEFORE re-rendering when that market's jobs reset
         const checkReset = (change) => {
             if (!change) return false;
@@ -4038,13 +4216,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
         const homeReset = checkReset(changes.marketData);
         const darkReset = checkReset(changes.darkMarketData);
         const soyuzReset = checkReset(changes.soyuzMarketData);
-        if (homeReset || darkReset || soyuzReset) {
-            const resetMarkets = [homeReset && 'HOME', darkReset && 'D4RK', soyuzReset && 'SOYUZ'].filter(Boolean).join(', ');
+        const usolReset = checkReset(changes.usolMarketData);
+        if (homeReset || darkReset || soyuzReset || usolReset) {
+            const resetMarkets = [homeReset && 'HOME', darkReset && 'D4RK', soyuzReset && 'SOYUZ', usolReset && 'USOL'].filter(Boolean).join(', ');
             addAutoJobLog('Job reset detected (' + resetMarkets + ') — clearing old tracker/results', 'info');
             autoJobsTracker = autoJobsTracker.filter(j => {
                 if (homeReset && (j.marketKey || 'home') === 'home') return false;
                 if (darkReset && j.marketKey === 'dark') return false;
                 if (soyuzReset && j.marketKey === 'soyuz') return false;
+                if (soyuzReset && j.marketKey === 'usol') return false;
                 return true;
             });
             chrome.storage.local.get('autoJobsCompletedResults', (result) => {
@@ -4052,6 +4232,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
                 if (homeReset) cr = cr.filter(j => j.marketKey !== 'home');
                 if (darkReset) cr = cr.filter(j => j.marketKey !== 'dark');
                 if (soyuzReset) cr = cr.filter(j => j.marketKey !== 'soyuz');
+                if (usolReset) cr = cr.filter(j => j.marketKey !== 'usol');
                 chrome.storage.local.set({ autoJobsCompletedResults: cr, autoJobsTracker: autoJobsTracker });
                 // Render after clearing so new data doesn't show stale DONE statuses
                 if (autoJobSolverToggle.checked) renderAutoJobsTabs();
