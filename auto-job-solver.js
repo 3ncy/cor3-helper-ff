@@ -29,9 +29,11 @@
     var DARK_MARKET_SERVER_ID = '019d29c5-4b37-79bf-b23e-304d8ea03c15';
     // SOYUZ market server ID — must set endpoint before interacting with SOYUZ jobs
     var SOYUZ_MARKET_SERVER_ID = '019da6f1-16f7-75a6-b6d3-0b1d5f92a108';
+    // USOL market server ID — must set endpoint before interacting with USOL jobs
+    var USOL_MARKET_SERVER_ID = '019e4052-c317-7388-9d71-883ffb1560cd';
 
     // Server priority order (furthest first)
-    var SERVER_PRIORITY = ['SRM7-N3L2', 'SRM7-M', 'SRM7-N4L2', 'SRM7-N3L1', 'RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4L4', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
+    var SERVER_PRIORITY = ['URM7-H', 'URM7-M', 'URM7-S5L2', 'B43274N', 'B43272N', 'B43271N', 'D4RK RM7EG', 'SRM7-N3L2', 'SRM7-M', 'SRM7-N4L2', 'SRM7-N3L1', 'RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4WCP', 'RM7-S4L3', 'RM7-S4L1', 'RM7-S4L4', 'RM7-S4L2', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
 
     // Job type priority (lower index = processed first per server)
     // Transit-affecting jobs last, simple first
@@ -144,6 +146,77 @@
             { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
             { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' },
             { name: 'SRM7-N3L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a109' }
+        ],
+        'RM7-S4L2': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' }
+        ],
+        'RM7-S4L3': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+            { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' }
+        ],
+        'RM7-S4L1': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L4', id: '019d1b0a-13a9-77dd-b41f-3ffb5f671742' },
+            { name: 'RM7-S4L1', id: '019e4052-c315-71df-80da-4e334b96c9e6' }
+        ],
+        'RM7-S4WCP': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+            { name: 'RM7-S4WCP', id: '019e4052-c316-73aa-81f6-448645a38c9e' }
+        ],
+        'D4RK RM7EG': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'D4RK RM7CE', id: '019d29c5-4b37-7436-aef9-89af09560af3' },
+            { name: 'D4RK RM7MI', id: '019d29c5-4b37-79bf-b23e-304d8ea03c15' },
+            { name: 'D4RK RM7EG', id: '019e4052-c316-73aa-81f6-483e50247e61' }
+        ],
+        'B43271N': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1L2CT', id: '019d53aa-5101-7f08-b3dd-378b0ddcf7d0' },
+            { name: 'B43271N', id: '019e4052-c316-73aa-81f6-567c9a8f5738' }
+        ],
+        'B43272N': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1L2CT', id: '019d53aa-5101-7f08-b3dd-378b0ddcf7d0' },
+            { name: 'B43271N', id: '019e4052-c316-73aa-81f6-567c9a8f5738' },
+            { name: 'B43272N', id: '019e4052-c316-73aa-81f6-5aa82fc72bdd' }
+        ],
+        'B43274N': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'D4RK RM7CE', id: '019d29c5-4b37-7436-aef9-89af09560af3' },
+            { name: 'D4RK RM7MI', id: '019d29c5-4b37-79bf-b23e-304d8ea03c15' },
+            { name: 'D4RK RM7EG', id: '019e4052-c316-73aa-81f6-483e50247e61' },
+            { name: 'B43274N', id: '019e4052-c316-73aa-81f6-60ec61b61f0a' }
+        ],
+        'URM7-S5L2': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+            { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+            { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' }
+        ],
+        'URM7-M': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+            { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+            { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' },
+            { name: 'URM7-M', id: '019e4052-c317-7388-9d71-883ffb1560cd' }
+        ],
+        'URM7-H': [
+            { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+            { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+            { name: 'RM7-S4L4', id: '019d1b0a-13a9-77dd-b41f-3ffb5f671742' },
+            { name: 'RM7-S4L1', id: '019e4052-c315-71df-80da-4e334b96c9e6' },
+            { name: 'URM7-H', id: '019e4052-c317-7388-9d71-8fed6faaaf99' }
         ]
     };
 
@@ -165,11 +238,12 @@
         return idx >= 0 ? idx : JOB_TYPE_PRIORITY.length;
     }
 
-    var MARKET_DISPLAY_NAMES = { home: 'HOME', dark: 'D4RK', soyuz: 'SOYUZ' };
+    var MARKET_DISPLAY_NAMES = { home: 'HOME', dark: 'D4RK', soyuz: 'SOYUZ', usol: 'USOL' };
     var MARKET_ID_TO_NAME = {
         '019d3ea4-85bd-7389-904d-8f7c85841134': 'HOME',
         '019d3ea4-85bd-7389-904d-908ba9194aa0': 'D4RK',
-        '019da731-2db5-7d76-9447-1ea3b9b78001': 'SOYUZ'
+        '019da731-2db5-7d76-9447-1ea3b9b78001': 'SOYUZ',
+        '019e4065-6ae8-760d-8724-58ab4f2cf7d7': 'USOL'
     };
     function getMarketNameById(marketId) {
         return MARKET_ID_TO_NAME[marketId] || marketId;
@@ -463,7 +537,7 @@
                         resolve({ ok: true, data: evt.data });
                     }
                 }
-                if (evt.data && (evt.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE' || evt.data.type === 'COR3_WS_SOYUZ_MARKET_UNREACHABLE')) {
+                if (evt.data && (evt.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE' || evt.data.type === 'COR3_WS_SOYUZ_MARKET_UNREACHABLE' || evt.data.type === 'COR3_WS_USOL_MARKET_UNREACHABLE')) {
                     cleanup();
                     resolve({ ok: false, unreachable: true });
                 }
@@ -587,10 +661,22 @@
             sendCmd('hack.start', { serverId: serverId });
             var hackResult;
             try {
-                hackResult = await waitForEvent('COR3_AUTOJOB_SAI_HACK_START', 30000);
+                hackResult = await new Promise(function (resolve, reject) {
+                    var done = false;
+                    var timer = setTimeout(function () {
+                        if (!done) { done = true; window.removeEventListener('message', onMsg); reject(new Error('Timeout')); }
+                    }, 30000);
+                    function onMsg(evt) {
+                        if (!evt.data) return;
+                        if (evt.data.type === 'COR3_AUTOJOB_SAI_HACK_START') {
+                            if (!done) { done = true; clearTimeout(timer); window.removeEventListener('message', onMsg); resolve(evt.data); }
+                        } else if (evt.data.type === 'COR3_AUTOJOB_MINIGAME_START') {
+                            if (!done) { done = true; clearTimeout(timer); window.removeEventListener('message', onMsg); resolve({ data: { minigameStarted: true }, error: null }); }
+                        }
+                    }
+                    window.addEventListener('message', onMsg);
+                });
             } catch (e) {
-                // Hack start timed out — but the hack may have already completed.
-                // Check login status before giving up.
                 log('Hack start event timed out — checking if hack already completed...', 'warn');
                 sendCmd('get.login.status', { serverId: serverId });
                 try {
@@ -602,7 +688,6 @@
                         log('Hack already completed (found ' + fbType + ' access after timeout) — logging in', 'success');
                         sendCmd('login.with-access', { serverId: serverId, accessGrantId: fbAccessId });
                         try { await waitForEvent('COR3_AUTOJOB_SAI_LOGIN_RESULT', 10000); } catch (e2) { /* proceed */ }
-                        // Skip the rest of hack flow — we're logged in
                         await delay(humanDelay());
                         return;
                     }
@@ -629,6 +714,9 @@
             }
             if (hackResult.data && hackResult.data.autoHacked) {
                 log('Server auto-hacked (no minigame) — skipping solver wait', 'success');
+            } else if (hackResult.data && hackResult.data.minigameStarted) {
+                log('Hack minigame detected via minigame event');
+                await waitForHackToBeDone();
             } else {
                 await waitForHackToBeDone();
             }
@@ -734,7 +822,7 @@
         var updatedConditions = await new Promise(function (resolve) {
             var timer;
             function handler(evt) {
-                if (evt.data && (evt.data.type === 'COR3_WS_MARKET' || evt.data.type === 'COR3_WS_DARK_MARKET' || evt.data.type === 'COR3_WS_SOYUZ_MARKET')) {
+                if (evt.data && (evt.data.type === 'COR3_WS_MARKET' || evt.data.type === 'COR3_WS_DARK_MARKET' || evt.data.type === 'COR3_WS_SOYUZ_MARKET' || evt.data.type === 'COR3_WS_USOL_MARKET')) {
                     var md = evt.data.market;
                     if (md && md.recentJobs) {
                         var rj = md.recentJobs.find(function (j) { return j.id === job.jobId; });
@@ -806,11 +894,13 @@
         };
         window.addEventListener('message', profileHandler);
 
-        // Set endpoint for D4RK/SOYUZ market jobs before completing
+        // Set endpoint for D4RK/SOYUZ/USOL market jobs before completing
         if (getMarketNameById(job.marketId) === 'D4RK') {
             await stepSetEndpoint(DARK_MARKET_SERVER_ID);
         } else if (getMarketNameById(job.marketId) === 'SOYUZ') {
             await stepSetEndpoint(SOYUZ_MARKET_SERVER_ID);
+        } else if (getMarketNameById(job.marketId) === 'USOL') {
+            await stepSetEndpoint(USOL_MARKET_SERVER_ID);
         }
 
         sendCmd('job.complete', { marketId: job.marketId, jobId: job.jobId });
@@ -927,7 +1017,7 @@
         if (!job.conditions) return null;
         for (var i = 0; i < job.conditions.length; i++) {
             var cond = job.conditions[i];
-            if (cond.type === 'DecryptFile' && cond.details && cond.details.files && cond.details.files.length > 0) {
+            if ((cond.type === 'DecryptFile' || cond.type === 'DecryptDownloadedFile') && cond.details && cond.details.files && cond.details.files.length > 0) {
                 return cond.details.files[0];
             }
         }
@@ -1541,7 +1631,16 @@
             var encFile = null;
             if (folderData && folderData.data && folderData.data.files) {
                 var files = folderData.data.files;
-                if (latestFileId) {
+                var condFileInfo = extractFileInfoFromConditions(job);
+                if (condFileInfo && condFileInfo.id) {
+                    encFile = files.find(function (f) { return f.id === condFileInfo.id; });
+                    if (encFile) log('Matched file from job conditions: ' + encFile.name);
+                }
+                if (!encFile && condFileInfo && condFileInfo.name) {
+                    encFile = files.find(function (f) { return f.name === condFileInfo.name; });
+                    if (encFile) log('Matched file by name from conditions: ' + encFile.name);
+                }
+                if (!encFile && latestFileId) {
                     encFile = files.find(function (f) { return f.id === latestFileId; });
                 }
                 if (!encFile) {
@@ -1943,11 +2042,13 @@
                 cj.status = 'running';
                 updateTracker();
                 try {
-                    // Set endpoint for D4RK/SOYUZ market jobs before completing
+                    // Set endpoint for D4RK/SOYUZ/USOL market jobs before completing
                     if (cj.marketKey === 'dark') {
                         await stepSetEndpoint(DARK_MARKET_SERVER_ID);
                     } else if (cj.marketKey === 'soyuz') {
                         await stepSetEndpoint(SOYUZ_MARKET_SERVER_ID);
+                    } else if (cj.marketKey === 'usol') {
+                        await stepSetEndpoint(USOL_MARKET_SERVER_ID);
                     }
                     var cReward = await stepCompleteJob(cj);
                     if (cReward) {
@@ -2016,11 +2117,13 @@
             updateTracker();
 
             try {
-                // Set endpoint for D4RK/SOYUZ market jobs before processing
+                // Set endpoint for D4RK/SOYUZ/USOL market jobs before processing
                 if (job.marketKey === 'dark') {
                     await stepSetEndpoint(DARK_MARKET_SERVER_ID);
                 } else if (job.marketKey === 'soyuz') {
                     await stepSetEndpoint(SOYUZ_MARKET_SERVER_ID);
+                } else if (job.marketKey === 'usol') {
+                    await stepSetEndpoint(USOL_MARKET_SERVER_ID);
                 }
                 log('Processing job ' + (i + 1) + '/' + jobQueue.length + ': ' + jobLabel(job));
                 var reward = await solveJob(job);

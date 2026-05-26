@@ -22,12 +22,13 @@ try { chrome.storage.sync.get('autoUpdateMarkets', (data) => {
 function _initAutoUpdateMarketsTimer() {
     if (!isContextValid()) { _autoUpdateMarketsLastRefresh = Date.now(); return; }
     try {
-        chrome.storage.local.get(['marketDataUpdatedAt', 'darkMarketDataUpdatedAt', 'soyuzMarketDataUpdatedAt'], (result) => {
+        chrome.storage.local.get(['marketDataUpdatedAt', 'darkMarketDataUpdatedAt', 'soyuzMarketDataUpdatedAt', 'usolMarketDataUpdatedAt'], (result) => {
             const now = Date.now();
             const timestamps = [
                 result.marketDataUpdatedAt || 0,
                 result.darkMarketDataUpdatedAt || 0,
-                result.soyuzMarketDataUpdatedAt || 0
+                result.soyuzMarketDataUpdatedAt || 0,
+                result.usolMarketDataUpdatedAt || 0
             ].filter(t => t > 0);
             if (timestamps.length === 0) {
                 // No market data at all — trigger immediate refresh
@@ -136,12 +137,18 @@ window.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'COR3_WS_SOYUZ_MARKET') {
         chrome.storage.local.set({ soyuzMarketData: event.data.market, soyuzMarketAvailable: true, soyuzMarketDataUpdatedAt: now });
     }
+    if (event.data && event.data.type === 'COR3_WS_USOL_MARKET') {
+        chrome.storage.local.set({ usolMarketData: event.data.market, usolMarketAvailable: true, usolMarketDataUpdatedAt: now });
+    }
     // Handle dark market unreachable — keep cached data, set flag
     if (event.data && event.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE') {
         chrome.storage.local.set({ darkMarketAvailable: false, darkMarketDataUpdatedAt: now, darkMarketMaintenanceEndsAt: event.data.maintenanceEndsAt || null, darkMarketBlockerServer: event.data.blockerServerName || null });
     }
     if (event.data && event.data.type === 'COR3_WS_SOYUZ_MARKET_UNREACHABLE') {
         chrome.storage.local.set({ soyuzMarketAvailable: false, soyuzMarketDataUpdatedAt: now, soyuzMarketMaintenanceEndsAt: event.data.maintenanceEndsAt || null, soyuzMarketBlockerServer: event.data.blockerServerName || null });
+    }
+    if (event.data && event.data.type === 'COR3_WS_USOL_MARKET_UNREACHABLE') {
+        chrome.storage.local.set({ usolMarketAvailable: false, usolMarketDataUpdatedAt: now, usolMarketMaintenanceEndsAt: event.data.maintenanceEndsAt || null, usolMarketBlockerServer: event.data.blockerServerName || null });
     }
     if (event.data && event.data.type === 'COR3_BEARER_TOKEN') {
         chrome.storage.local.get('bearerToken', (prev) => {
@@ -657,6 +664,15 @@ function getTimerRemainingSeconds(timerSource) {
                     resolve(null);
                 }
             });
+        } else if (timerSource === 'usol_jobs') {
+            chrome.storage.local.get('usolMarketData', (result) => {
+                if (result.usolMarketData && result.usolMarketData.nextJobsResetAt) {
+                    const diff = new Date(result.usolMarketData.nextJobsResetAt).getTime() - Date.now();
+                    resolve(diff > 0 ? Math.floor(diff / 1000) : 0);
+                } else {
+                    resolve(null);
+                }
+            });
         } else if (timerSource.startsWith('exp_')) {
             const expId = timerSource.substring(4);
             chrome.storage.local.get('expeditionsData', (result) => {
@@ -713,9 +729,9 @@ async function checkAlarms() {
 alarmsIntervalId = setInterval(() => checkAlarms(), 1000);
 
 // --- Auto-Refresh for Market Job Timers ---
-let autoRefreshSettings = { home_jobs: false, dark_jobs: false, soyuz_jobs: false };
-let autoRefreshRetryPending = { home_jobs: false, dark_jobs: false, soyuz_jobs: false };
-let autoRefreshExpiredRetryAt = { home_jobs: 0, dark_jobs: 0, soyuz_jobs: 0 }; // timestamp when next expired retry is allowed
+let autoRefreshSettings = { home_jobs: false, dark_jobs: false, soyuz_jobs: false, usol_jobs: false };
+let autoRefreshRetryPending = { home_jobs: false, dark_jobs: false, soyuz_jobs: false, usol_jobs: false };
+let autoRefreshExpiredRetryAt = { home_jobs: 0, dark_jobs: 0, soyuz_jobs: 0, usol_jobs: 0 }; // timestamp when next expired retry is allowed
 
 // Load auto-refresh settings on startup
 try { chrome.storage.sync.get('autoRefresh', (data) => {
@@ -735,7 +751,7 @@ try { chrome.storage.onChanged.addListener((changes, area) => {
     }
     // Clear expired retry cooldown when market data arrives with a future nextJobsResetAt
     if (area === 'local') {
-        const marketKeyMap = { marketData: 'home_jobs', darkMarketData: 'dark_jobs', soyuzMarketData: 'soyuz_jobs' };
+        const marketKeyMap = { marketData: 'home_jobs', darkMarketData: 'dark_jobs', soyuzMarketData: 'soyuz_jobs', usolMarketData: 'usol_jobs' };
         for (const [storageKey, refreshKey] of Object.entries(marketKeyMap)) {
             if (changes[storageKey] && changes[storageKey].newValue) {
                 const resetAt = changes[storageKey].newValue.nextJobsResetAt;
@@ -751,7 +767,7 @@ function getMarketTimerSeconds(which) {
     return new Promise((resolve) => {
         if (!isContextValid()) { resolve(null); return; }
         try {
-            const key = which === 'home_jobs' ? 'marketData' : which === 'soyuz_jobs' ? 'soyuzMarketData' : 'darkMarketData';
+            const key = which === 'home_jobs' ? 'marketData' : which === 'usol_jobs' ? 'usolMarketData' : which === 'soyuz_jobs' ? 'soyuzMarketData' : 'darkMarketData';
             chrome.storage.local.get(key, (result) => {
                 const data = result[key];
                 if (data && data.nextJobsResetAt) {
@@ -777,7 +793,7 @@ async function checkAutoRefresh() {
         let needsRefresh = false;
         let expiredMarkets = [];
         const now = Date.now();
-        for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs']) {
+        for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs', 'usol_jobs']) {
             if (!autoRefreshSettings[key]) continue;
             if (autoRefreshRetryPending[key]) continue;
 
@@ -798,8 +814,9 @@ async function checkAutoRefresh() {
                 autoRefreshExpiredRetryAt[key] = now + 60000; // retry again in 60s if still expired
             }
 
-            // Build order: only include expired markets, priority: soyuz → dark → home
+            // Build order: only include expired markets, priority: usol → soyuz → dark → home
             var order = [];
+            if (expiredMarkets.includes('usol_jobs')) order.push('usol');
             if (expiredMarkets.includes('soyuz_jobs')) order.push('soyuz');
             if (expiredMarkets.includes('dark_jobs')) order.push('dark');
             if (expiredMarkets.includes('home_jobs')) order.push('home');
@@ -814,7 +831,7 @@ async function checkAutoRefresh() {
             // After 30s max, clear the pending flags so next cycle can retry if needed
             setTimeout(() => {
                 _seqRefreshRunning = false;
-                for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs']) {
+                for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs', 'usol_jobs']) {
                     autoRefreshRetryPending[key] = false;
                 }
             }, 30000);
@@ -824,7 +841,7 @@ async function checkAutoRefresh() {
                 if (evt.data && evt.data.type === 'COR3_ALL_MARKETS_REFRESHED') {
                     window.removeEventListener('message', onAllDone);
                     _seqRefreshRunning = false;
-                    for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs']) {
+                    for (const key of ['home_jobs', 'dark_jobs', 'soyuz_jobs', 'usol_jobs']) {
                         autoRefreshRetryPending[key] = false;
                     }
                 }
@@ -986,6 +1003,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         _autoUpdateMarketsLastRefresh = Date.now();
         setTimeout(() => { _marketRefreshInProgress = false; }, 10000);
         window.postMessage({ type: 'COR3_REFRESH_SOYUZ_MARKET' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "requestUsolMarket") {
+        window.postMessage({ type: 'COR3_REQUEST_USOL_MARKET' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "refreshUsolMarket") {
+        _marketRefreshInProgress = true;
+        _autoUpdateMarketsLastRefresh = Date.now();
+        setTimeout(() => { _marketRefreshInProgress = false; }, 10000);
+        window.postMessage({ type: 'COR3_REFRESH_USOL_MARKET' }, '*');
         sendResponse({ success: true });
     } else if (request.action === "refreshAllMarketsSeq") {
         _marketRefreshInProgress = true;

@@ -253,6 +253,15 @@ var webVersion = null;
                 ws.send = function (data) {
                     try {
                         if (typeof data === 'string') {
+                            if (data.indexOf('40{') === 0) {
+                                try {
+                                    var connectPayload = JSON.parse(data.substring(2));
+                                    if (connectPayload.token && connectPayload.token.startsWith('Bearer ')) {
+                                        capturedBearerToken = connectPayload.token;
+                                        window.postMessage({ type: 'COR3_BEARER_TOKEN', token: connectPayload.token }, '*');
+                                    }
+                                } catch (e) { /* silent */ }
+                            }
                             window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: data }, '*');
                         } else if (data instanceof ArrayBuffer || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(data))) {
                             decodeBinaryMsg(data, function (str) {
@@ -572,15 +581,18 @@ var webVersion = null;
             function resolveMarketType(id) {
                 if (id === '019d3ea4-85bd-7389-904d-908ba9194aa0') return 'dark';
                 if (id === '019da731-2db5-7d76-9447-1ea3b9b78001') return 'soyuz';
+                if (id === '019e4065-6ae8-760d-8724-58ab4f2cf7d7') return 'usol';
                 return 'home'; // 019d3ea4-85bd-7389-904d-8f7c85841134
             }
             function marketCacheKey(type) {
                 return type === 'dark' ? '__cor3DarkMarketCache'
-                    : type === 'soyuz' ? '__cor3SoyuzMarketCache' : '__cor3HomeMarketCache';
+                    : type === 'soyuz' ? '__cor3SoyuzMarketCache'
+                    : type === 'usol' ? '__cor3UsolMarketCache' : '__cor3HomeMarketCache';
             }
             function marketMsgType(type) {
                 return type === 'dark' ? 'COR3_WS_DARK_MARKET'
-                    : type === 'soyuz' ? 'COR3_WS_SOYUZ_MARKET' : 'COR3_WS_MARKET';
+                    : type === 'soyuz' ? 'COR3_WS_SOYUZ_MARKET'
+                    : type === 'usol' ? 'COR3_WS_USOL_MARKET' : 'COR3_WS_MARKET';
             }
             function postMarketUpdate(type, cache) {
                 window.postMessage({ type: marketMsgType(type), market: cache }, '*');
@@ -661,14 +673,17 @@ var webVersion = null;
                 var errMsg = payload.error && payload.error.message;
                 var isUnreachableErr = errMsg === 'no-path-to-server' || errMsg === 'server-in-maintenance' || errMsg === 'market-not-reachable';
                 if (payload.error && isUnreachableErr) {
-                    console.log('[COR3 Helper] Server unreachable: ' + errMsg + ' (dark-pt: ' + !!window.__cor3DarkMarketPathThrough + ', soyuz-pt: ' + !!window.__cor3SoyuzMarketPathThrough + ')');
+                    console.log('[COR3 Helper] Server unreachable: ' + errMsg + ' (dark-pt: ' + !!window.__cor3DarkMarketPathThrough + ', soyuz-pt: ' + !!window.__cor3SoyuzMarketPathThrough + ', usol-pt: ' + !!window.__cor3UsolMarketPathThrough + ')');
                     // During path-through, forward as ENDPOINT_RESULT for the path-through handler to deal with
-                    if (window.__cor3DarkMarketPathThrough || window.__cor3SoyuzMarketPathThrough) {
+                    if (window.__cor3DarkMarketPathThrough || window.__cor3SoyuzMarketPathThrough || window.__cor3UsolMarketPathThrough) {
                         window.postMessage({
                             type: 'COR3_WS_ENDPOINT_RESULT',
                             success: false,
                             error: payload.error
                         }, '*');
+                    } else if (window.__cor3UsolMarketPending) {
+                        // USOL market refresh failed — fetch network-map for maintenance blocker
+                        __cor3PostUnreachable('usol', null, USOL_FULL_PATH);
                     } else if (window.__cor3SoyuzMarketPending) {
                         // SOYUZ market refresh failed — fetch network-map for maintenance blocker
                         __cor3PostUnreachable('soyuz', null, SOYUZ_FULL_PATH);
@@ -1431,6 +1446,14 @@ var webVersion = null;
         { name: 'SRM7-N3L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a107' },
         { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' }
     ];
+    var USOL_FULL_PATH = [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+        { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+        { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' },
+        { name: 'URM7-M', id: '019e4052-c317-7388-9d71-883ffb1560cd' }
+    ];
 
     // Fetch network-map and find the first server on `pathServers` that is in maintenance.
     // Returns Promise<{blockerName, maintenanceEndsAt}> or null if none found.
@@ -1469,7 +1492,8 @@ var webVersion = null;
 
     // Post an UNREACHABLE message with maintenance info fetched from network-map
     function __cor3PostUnreachable(marketType, serverName, pathServers) {
-        var msgType = marketType === 'soyuz' ? 'COR3_WS_SOYUZ_MARKET_UNREACHABLE' : 'COR3_WS_DARK_MARKET_UNREACHABLE';
+        var msgType = marketType === 'usol' ? 'COR3_WS_USOL_MARKET_UNREACHABLE'
+            : marketType === 'soyuz' ? 'COR3_WS_SOYUZ_MARKET_UNREACHABLE' : 'COR3_WS_DARK_MARKET_UNREACHABLE';
         __cor3FetchMaintenanceBlocker(pathServers).then(function (blocker) {
             window.postMessage({
                 type: msgType,
@@ -1862,13 +1886,203 @@ var webVersion = null;
         return true;
     };
 
-    // --- Sequential all-markets refresh (one at a time: SOYUZ → D4RK → HOME) ---
+    // USOL Market: set endpoint to URM7-M server, then send get.options
+    // Path: HOME → RM7-E1L5 → RM7-E1SCP → RM7-S4L2 → RM7-S4L3 → URM7-S5L2 → URM7-M
+    // Hackable: RM7-E1L5, RM7-E1SCP, RM7-S4L2, RM7-S4L3, URM7-S5L2
+    // Non-hackable: URM7-M (market server)
+    var USOL_SERVER_ID = '019e4052-c317-7388-9d71-883ffb1560cd'; // URM7-M
+    var USOL_MARKET_ID = '019e4065-6ae8-760d-8724-58ab4f2cf7d7';
+    var USOL_PATH_THROUGH_SERVERS = [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+        { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+        { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' }
+    ];
+    window.__cor3UsolMarketPathThrough = false;
+
+    // Run path-through for USOL: ensure access to intermediate hackable servers, then retry
+    function __cor3UsolMarketPathThroughRetry() {
+        window.__cor3UsolMarketPathThrough = true;
+        console.log('[COR3 Helper] Path-through: starting for USOL market access');
+
+        var serverIndex = 0;
+        function processNextServer() {
+            if (serverIndex >= USOL_PATH_THROUGH_SERVERS.length) {
+                window.__cor3UsolMarketPathThrough = false;
+                console.log('[COR3 Helper] Path-through: all intermediate servers accessed, retrying USOL endpoint');
+                var setEndpoint = '42["event",{"event":{"name":"network-map","action":"set.endpoint"},"data":{"serverId":"' + USOL_SERVER_ID + '"}}]';
+                wsSend(setEndpoint);
+                var retryDone = false;
+                function onRetryResult(evt) {
+                    if (retryDone) return;
+                    if (evt.data && evt.data.type === 'COR3_WS_ENDPOINT_RESULT') {
+                        retryDone = true;
+                        window.removeEventListener('message', onRetryResult);
+                        clearTimeout(retryTimer);
+                        console.log('[COR3 Helper] Path-through: USOL endpoint set successfully');
+                        var getOpt = '42["event",{"event":{"name":"market","action":"get.options"},"data":{"marketId":"' + USOL_MARKET_ID + '"}}]';
+                        wsSend(getOpt);
+                    }
+                    if (evt.data && evt.data.type === 'COR3_WS_USOL_MARKET_UNREACHABLE') {
+                        retryDone = true;
+                        window.removeEventListener('message', onRetryResult);
+                        clearTimeout(retryTimer);
+                        console.log('[COR3 Helper] Path-through: USOL endpoint still unreachable after path-through');
+                    }
+                }
+                window.addEventListener('message', onRetryResult);
+                var retryTimer = setTimeout(function () {
+                    if (!retryDone) {
+                        retryDone = true;
+                        window.removeEventListener('message', onRetryResult);
+                    }
+                }, 10000);
+                return;
+            }
+
+            var server = USOL_PATH_THROUGH_SERVERS[serverIndex];
+            console.log('[COR3 Helper] Path-through: setting endpoint to ' + server.name);
+            var setEp = '42["event",{"event":{"name":"network-map","action":"set.endpoint"},"data":{"serverId":"' + server.id + '"}}]';
+            wsSend(setEp);
+
+            var epDone = false;
+            function onEndpoint(evt) {
+                if (epDone) return;
+                if (evt.data && evt.data.type === 'COR3_WS_ENDPOINT_RESULT') {
+                    epDone = true;
+                    window.removeEventListener('message', onEndpoint);
+                    clearTimeout(epTimer);
+                    if (evt.data.success === false) {
+                        window.__cor3UsolMarketPathThrough = false;
+                        console.log('[COR3 Helper] Path-through: ' + server.name + ' unreachable — aborting');
+                        __cor3PostUnreachable('usol', server.name, USOL_FULL_PATH);
+                        return;
+                    }
+                    __cor3EnsureServerAccess(server.id, server.name).then(function () {
+                        serverIndex++;
+                        processNextServer();
+                    }).catch(function (e) {
+                        window.__cor3UsolMarketPathThrough = false;
+                        console.log('[COR3 Helper] Path-through: ' + server.name + ' access failed — ' + e.message);
+                        __cor3PostUnreachable('usol', server.name, USOL_FULL_PATH);
+                    });
+                }
+            }
+            window.addEventListener('message', onEndpoint);
+            var epTimer = setTimeout(function () {
+                if (!epDone) {
+                    epDone = true;
+                    window.removeEventListener('message', onEndpoint);
+                    __cor3EnsureServerAccess(server.id, server.name).then(function () {
+                        serverIndex++;
+                        processNextServer();
+                    }).catch(function () {
+                        window.__cor3UsolMarketPathThrough = false;
+                        __cor3PostUnreachable('usol', server.name, USOL_FULL_PATH);
+                    });
+                }
+            }, 10000);
+        }
+        processNextServer();
+    }
+
+    window.__cor3RequestUsolMarket = function (callback) {
+        var myAbortId = __cor3MarketRefreshAbortId;
+        console.log('[COR3 Helper] Setting USOL endpoint');
+        var setEndpoint = '42["event",{"event":{"name":"network-map","action":"set.endpoint"},"data":{"serverId":"' + USOL_SERVER_ID + '"}}]';
+        window.__cor3UsolMarketPending = true;
+        wsSend(setEndpoint);
+
+        function fetchUsolBatch(cb) {
+            if (myAbortId !== __cor3MarketRefreshAbortId) {
+                console.log('[COR3 Helper] USOL market fetch aborted (token-expired)');
+                return;
+            }
+            console.log('[COR3 Helper] Requesting USOL market (batch: options+lots+jobs)');
+            var getOptions = '42["event",{"event":{"name":"market","action":"get.options"},"data":{"marketId":"' + USOL_MARKET_ID + '"}}]';
+            var getLots = '42["event",{"event":{"name":"market","action":"get.lots"},"data":{"marketId":"' + USOL_MARKET_ID + '"}}]';
+            var getJobs = '42["event",{"event":{"name":"market","action":"get.jobs"},"data":{"marketId":"' + USOL_MARKET_ID + '"}}]';
+            wsSend(getOptions);
+            wsSend(getLots);
+            wsSend(getJobs);
+            function onComplete(evt) {
+                if (!evt.data) return;
+                if (myAbortId !== __cor3MarketRefreshAbortId) {
+                    window.removeEventListener('message', onComplete);
+                    clearTimeout(tmr);
+                    console.log('[COR3 Helper] USOL market fetch aborted (token-expired)');
+                    return;
+                }
+                if (evt.data.type === 'COR3_MARKET_FETCH_COMPLETE' && evt.data.marketType === 'usol') {
+                    window.removeEventListener('message', onComplete);
+                    clearTimeout(tmr);
+                    console.log('[COR3 Helper] USOL market fetch complete');
+                    if (cb) cb();
+                }
+            }
+            window.addEventListener('message', onComplete);
+            var tmr = setTimeout(function () {
+                window.removeEventListener('message', onComplete);
+                console.log('[COR3 Helper] USOL market fetch timeout');
+                if (cb) cb();
+            }, 15000);
+        }
+
+        var handled = false;
+        function onUsolEndpoint(evt) {
+            if (handled) return;
+            if (myAbortId !== __cor3MarketRefreshAbortId) {
+                handled = true;
+                window.removeEventListener('message', onUsolEndpoint);
+                clearTimeout(usolEpTimer);
+                window.__cor3UsolMarketPending = false;
+                console.log('[COR3 Helper] USOL endpoint aborted (token-expired)');
+                return;
+            }
+            if (evt.data && evt.data.type === 'COR3_WS_ENDPOINT_RESULT') {
+                handled = true;
+                window.removeEventListener('message', onUsolEndpoint);
+                clearTimeout(usolEpTimer);
+                window.__cor3UsolMarketPending = false;
+                fetchUsolBatch(callback);
+            }
+            if (evt.data && evt.data.type === 'COR3_WS_USOL_MARKET_UNREACHABLE') {
+                handled = true;
+                window.removeEventListener('message', onUsolEndpoint);
+                clearTimeout(usolEpTimer);
+                window.__cor3UsolMarketPending = false;
+                console.log('[COR3 Helper] USOL endpoint unreachable — attempting path-through');
+                __cor3UsolMarketPathThroughRetry();
+                if (callback) callback();
+            }
+        }
+        window.addEventListener('message', onUsolEndpoint);
+        var usolEpTimer = setTimeout(function () {
+            if (!handled) {
+                handled = true;
+                window.removeEventListener('message', onUsolEndpoint);
+                window.__cor3UsolMarketPending = false;
+                console.log('[COR3 Helper] USOL endpoint timeout');
+                if (callback) callback();
+            }
+        }, 10000);
+        return true;
+    };
+
+    // USOL Market refresh: re-fetch full data (sequential)
+    window.__cor3RefreshUsolMarket = function (callback) {
+        window.__cor3RequestUsolMarket(callback);
+        return true;
+    };
+
+    // --- Sequential all-markets refresh (one at a time: USOL → SOYUZ → D4RK → HOME) ---
     // Each market fully completes (set.endpoint → batch options+lots+jobs) before the next starts.
     // This prevents interleaved WS messages that confuse the server and our response handlers.
     // On token-expired, the abortId check stops the sequence.
     window.__cor3RefreshAllMarketsSequential = function (callback, opts) {
         opts = opts || {};
-        var order = opts.order || ['soyuz', 'dark', 'home']; // default: furthest first
+        var order = opts.order || ['usol', 'soyuz', 'dark', 'home']; // default: furthest first
         var skipLots = !!opts.skipLots; // auto-jobs mode: skip get.lots
         var idx = 0;
         var myAbortId = __cor3MarketRefreshAbortId;
@@ -1888,7 +2102,13 @@ var webVersion = null;
             var market = order[idx];
             idx++;
             console.log('[COR3 Helper] Sequential refresh: starting ' + market.toUpperCase());
-            if (market === 'soyuz') {
+            if (market === 'usol') {
+                if (skipLots) {
+                    window.__cor3RequestUsolMarketJobsOnly(function () { refreshNext(); });
+                } else {
+                    window.__cor3RequestUsolMarket(function () { refreshNext(); });
+                }
+            } else if (market === 'soyuz') {
                 if (skipLots) {
                     window.__cor3RequestSoyuzMarketJobsOnly(function () { refreshNext(); });
                 } else {
@@ -2095,6 +2315,84 @@ var webVersion = null;
         }, 10000);
     };
 
+    window.__cor3RequestUsolMarketJobsOnly = function (callback) {
+        var myAbortId = __cor3MarketRefreshAbortId;
+        console.log('[COR3 Helper] Setting USOL endpoint (jobs-only)');
+        var setEndpoint = '42["event",{"event":{"name":"network-map","action":"set.endpoint"},"data":{"serverId":"' + USOL_SERVER_ID + '"}}]';
+        window.__cor3UsolMarketPending = true;
+        wsSend(setEndpoint);
+
+        function fetchUsolJobsBatch(cb) {
+            if (myAbortId !== __cor3MarketRefreshAbortId) {
+                console.log('[COR3 Helper] USOL market jobs-only fetch aborted (token-expired)');
+                return;
+            }
+            console.log('[COR3 Helper] Requesting USOL market (batch: options+jobs, jobs-only)');
+            var getOptions = '42["event",{"event":{"name":"market","action":"get.options"},"data":{"marketId":"' + USOL_MARKET_ID + '"}}]';
+            var getJobs = '42["event",{"event":{"name":"market","action":"get.jobs"},"data":{"marketId":"' + USOL_MARKET_ID + '"}}]';
+            wsSend(getOptions);
+            wsSend(getJobs);
+            function onComplete(evt) {
+                if (!evt.data) return;
+                if (myAbortId !== __cor3MarketRefreshAbortId) {
+                    window.removeEventListener('message', onComplete);
+                    clearTimeout(tmr);
+                    return;
+                }
+                if (evt.data.type === 'COR3_MARKET_FETCH_COMPLETE' && evt.data.marketType === 'usol') {
+                    window.removeEventListener('message', onComplete);
+                    clearTimeout(tmr);
+                    console.log('[COR3 Helper] USOL market jobs-only fetch complete');
+                    if (cb) cb();
+                }
+            }
+            window.addEventListener('message', onComplete);
+            var tmr = setTimeout(function () {
+                window.removeEventListener('message', onComplete);
+                console.log('[COR3 Helper] USOL market jobs-only fetch timeout');
+                if (cb) cb();
+            }, 15000);
+        }
+
+        var handled = false;
+        function onEndpoint(evt) {
+            if (handled) return;
+            if (myAbortId !== __cor3MarketRefreshAbortId) {
+                handled = true;
+                window.removeEventListener('message', onEndpoint);
+                clearTimeout(epTmr);
+                window.__cor3UsolMarketPending = false;
+                return;
+            }
+            if (evt.data && evt.data.type === 'COR3_WS_ENDPOINT_RESULT') {
+                handled = true;
+                window.removeEventListener('message', onEndpoint);
+                clearTimeout(epTmr);
+                window.__cor3UsolMarketPending = false;
+                fetchUsolJobsBatch(callback);
+            }
+            if (evt.data && evt.data.type === 'COR3_WS_USOL_MARKET_UNREACHABLE') {
+                handled = true;
+                window.removeEventListener('message', onEndpoint);
+                clearTimeout(epTmr);
+                window.__cor3UsolMarketPending = false;
+                console.log('[COR3 Helper] USOL endpoint unreachable (jobs-only) — attempting path-through');
+                __cor3UsolMarketPathThroughRetry();
+                if (callback) callback();
+            }
+        }
+        window.addEventListener('message', onEndpoint);
+        var epTmr = setTimeout(function () {
+            if (!handled) {
+                handled = true;
+                window.removeEventListener('message', onEndpoint);
+                window.__cor3UsolMarketPending = false;
+                console.log('[COR3 Helper] USOL endpoint timeout (jobs-only)');
+                if (callback) callback();
+            }
+        }, 10000);
+    };
+
     // Auto-fetch all data on page load (called when WS opens)
     var initialFetchDone = false;
     window.__cor3ResetInitialFetch = function () {
@@ -2110,13 +2408,16 @@ var webVersion = null;
         window.postMessage({ type: 'COR3_FETCH_DAILY_OPS' }, '*');
 
         // Fetch all markets SEQUENTIALLY to avoid get.lots/get.jobs confusion
-        // HOME → D4RK → SOYUZ, then other data
+        // HOME → D4RK → SOYUZ → USOL, then other data
         window.__cor3RequestMarket(function () {
             console.log('[COR3 Helper] HOME done, starting D4RK');
             window.__cor3RequestDarkMarket(function () {
                 console.log('[COR3 Helper] D4RK done, starting SOYUZ');
                 window.__cor3RequestSoyuzMarket(function () {
-                    console.log('[COR3 Helper] All markets fetched');
+                    console.log('[COR3 Helper] SOYUZ done, starting USOL');
+                    window.__cor3RequestUsolMarket(function () {
+                        console.log('[COR3 Helper] All markets fetched');
+                    });
                 });
             });
         });
@@ -2188,6 +2489,9 @@ var webVersion = null;
         if (event.data && event.data.type === 'COR3_REQUEST_SOYUZ_MARKET') {
             window.__cor3RequestSoyuzMarket();
         }
+        if (event.data && event.data.type === 'COR3_REQUEST_USOL_MARKET') {
+            window.__cor3RequestUsolMarket();
+        }
         if (event.data && event.data.type === 'COR3_REFRESH_MARKET') {
             window.__cor3RefreshMarket();
         }
@@ -2196,6 +2500,9 @@ var webVersion = null;
         }
         if (event.data && event.data.type === 'COR3_REFRESH_SOYUZ_MARKET') {
             window.__cor3RefreshSoyuzMarket();
+        }
+        if (event.data && event.data.type === 'COR3_REFRESH_USOL_MARKET') {
+            window.__cor3RefreshUsolMarket();
         }
         if (event.data && event.data.type === 'COR3_REFRESH_ALL_MARKETS_SEQ') {
             var opts = {};

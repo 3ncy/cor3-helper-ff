@@ -183,12 +183,83 @@ const SERVER_PATH_MAP = {
         { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
         { name: 'RM7-W3NCP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a106' },
         { name: 'RM7-N1L1', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a104' }
+    ],
+    'RM7-S4L2': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' }
+    ],
+    'RM7-S4L3': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+        { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' }
+    ],
+    'RM7-S4L1': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L4', id: '019d1b0a-13a9-77dd-b41f-3ffb5f671742' },
+        { name: 'RM7-S4L1', id: '019e4052-c315-71df-80da-4e334b96c9e6' }
+    ],
+    'RM7-S4WCP': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+        { name: 'RM7-S4WCP', id: '019e4052-c316-73aa-81f6-448645a38c9e' }
+    ],
+    'D4RK RM7EG': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'D4RK RM7CE', id: '019d29c5-4b37-7436-aef9-89af09560af3' },
+        { name: 'D4RK RM7MI', id: '019d29c5-4b37-79bf-b23e-304d8ea03c15' },
+        { name: 'D4RK RM7EG', id: '019e4052-c316-73aa-81f6-483e50247e61' }
+    ],
+    'B43271N': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1L2CT', id: '019d53aa-5101-7f08-b3dd-378b0ddcf7d0' },
+        { name: 'B43271N', id: '019e4052-c316-73aa-81f6-567c9a8f5738' }
+    ],
+    'B43272N': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1L2CT', id: '019d53aa-5101-7f08-b3dd-378b0ddcf7d0' },
+        { name: 'B43271N', id: '019e4052-c316-73aa-81f6-567c9a8f5738' },
+        { name: 'B43272N', id: '019e4052-c316-73aa-81f6-5aa82fc72bdd' }
+    ],
+    'B43274N': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'D4RK RM7CE', id: '019d29c5-4b37-7436-aef9-89af09560af3' },
+        { name: 'D4RK RM7MI', id: '019d29c5-4b37-79bf-b23e-304d8ea03c15' },
+        { name: 'D4RK RM7EG', id: '019e4052-c316-73aa-81f6-483e50247e61' },
+        { name: 'B43274N', id: '019e4052-c316-73aa-81f6-60ec61b61f0a' }
+    ],
+    'URM7-S5L2': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+        { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+        { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' }
+    ],
+    'URM7-M': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
+        { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+        { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' },
+        { name: 'URM7-M', id: '019e4052-c317-7388-9d71-883ffb1560cd' }
+    ],
+    'URM7-H': [
+        { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
+        { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+        { name: 'RM7-S4L4', id: '019d1b0a-13a9-77dd-b41f-3ffb5f671742' },
+        { name: 'RM7-S4L1', id: '019e4052-c315-71df-80da-4e334b96c9e6' },
+        { name: 'URM7-H', id: '019e4052-c317-7388-9d71-8fed6faaaf99' }
     ]
 };
 
-function collectJobsBg(marketData, darkMarketData, completedResults, serverMaintenanceMap, soyuzMarketData) {
-    const MARKET_IDS = { home: '019d3ea4-85bd-7389-904d-8f7c85841134', dark: '019d3ea4-85bd-7389-904d-908ba9194aa0', soyuz: '019da731-2db5-7d76-9447-1ea3b9b78001' };
-    const SERVER_PRIORITY = ['RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4L4', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
+function collectJobsBg(marketData, darkMarketData, completedResults, serverMaintenanceMap, soyuzMarketData, usolMarketData) {
+    const MARKET_IDS = { home: '019d3ea4-85bd-7389-904d-8f7c85841134', dark: '019d3ea4-85bd-7389-904d-908ba9194aa0', soyuz: '019da731-2db5-7d76-9447-1ea3b9b78001', usol: '019e4065-6ae8-760d-8724-58ab4f2cf7d7' };
+    const SERVER_PRIORITY = ['URM7-H', 'URM7-M', 'URM7-S5L2', 'B43274N', 'B43272N', 'B43271N', 'D4RK RM7EG', 'SRM7-N3L2', 'SRM7-M', 'SRM7-N4L2', 'SRM7-N3L1', 'RM7-N1L1', 'RM7-W3NCP', 'RM7-N2L3', 'RM7-N2L2', 'RM7-N2ECP', 'D4RK RM7CE', 'RM7-S4WCP', 'RM7-S4L3', 'RM7-S4L1', 'RM7-S4L4', 'RM7-S4L2', 'RM7-E1SCP', 'RM7-E1L2CT', 'RM7-E1L5', 'RM7-E1L3'];
     const JOB_TYPE_PRIORITY = ['IP Injection', 'IP Cleanup', 'Data Upload', 'Data Download', 'Log Deletion', 'Log Download', 'File Elimination', 'File Decryption', 'Decrypt & Extract'];
     const maint = serverMaintenanceMap || {};
     const now = Date.now();
@@ -222,8 +293,8 @@ function collectJobsBg(marketData, darkMarketData, completedResults, serverMaint
     }
     const jobs = [];
     const skippedMaintenance = [];
-    for (const marketKey of ['dark', 'home', 'soyuz']) {
-        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : soyuzMarketData;
+    for (const marketKey of ['dark', 'home', 'soyuz', 'usol']) {
+        const md = marketKey === 'home' ? marketData : marketKey === 'dark' ? darkMarketData : marketKey === 'usol' ? usolMarketData : soyuzMarketData;
         if (!md) continue;
         const openJobs = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && SUPPORTED_JOB_TYPES_BG.includes(j.name) && !isJobBuggedBg(j) && !skipIds.has(j.id));
         const takenJobs = (md.recentJobs || []).filter(j => j.status === 'TAKEN' && SUPPORTED_JOB_TYPES_BG.includes(j.name) && !isJobBuggedBg(j) && !skipIds.has(j.id));
@@ -311,7 +382,7 @@ async function scheduleAutoFinishAllBg() {
         return;
     }
 
-    const { marketData, darkMarketData, soyuzMarketData, autoJobsRunning, serverMaintenanceMap } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'autoJobsRunning', 'serverMaintenanceMap']);
+    const { marketData, darkMarketData, soyuzMarketData, usolMarketData, autoJobsRunning, serverMaintenanceMap } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'usolMarketData', 'autoJobsRunning', 'serverMaintenanceMap']);
 
     // If jobs are currently running, don't schedule — will be called again when they finish
     if (autoJobsRunning) {
@@ -326,7 +397,7 @@ async function scheduleAutoFinishAllBg() {
 
     // Check if jobs are available now (exclude previously failed/bugged and in-maintenance)
     const { autoJobsCompletedResults: crSched } = await chrome.storage.local.get('autoJobsCompletedResults');
-    const availableNow = collectJobsBg(marketData, darkMarketData, crSched || [], serverMaintenanceMap, soyuzMarketData);
+    const availableNow = collectJobsBg(marketData, darkMarketData, crSched || [], serverMaintenanceMap, soyuzMarketData, usolMarketData);
     if (availableNow.length > 0) {
         bgAutoJobLog('🔄 Auto Finish All: jobs available now — starting in 10s');
         await chrome.alarms.create('autoFinishAllJobs', { delayInMinutes: 10 / 60 });
@@ -339,7 +410,7 @@ async function scheduleAutoFinishAllBg() {
     let scheduledReason = '';
 
     // Job reset times
-    for (const md of [marketData, darkMarketData, soyuzMarketData]) {
+    for (const md of [marketData, darkMarketData, soyuzMarketData, usolMarketData]) {
         if (md && md.nextJobsResetAt) {
             const diff = new Date(md.nextJobsResetAt).getTime() - now;
             if (diff > 0 && diff < minWaitMs) {
@@ -449,15 +520,17 @@ async function runAutoFinishAllBg() {
         if (runCheck.autoJobsRunning) return;
 
         // Determine which markets need refresh (timer expired or no data)
-        const { marketData: mdCheck, darkMarketData: dmdCheck, soyuzMarketData: smdCheck } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+        const { marketData: mdCheck, darkMarketData: dmdCheck, soyuzMarketData: smdCheck, usolMarketData: umdCheck } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'usolMarketData']);
         const nowCheck = Date.now();
         const expiredMarkets = [];
         if (!mdCheck || !mdCheck.nextJobsResetAt || new Date(mdCheck.nextJobsResetAt).getTime() <= nowCheck) expiredMarkets.push('home');
         if (!dmdCheck || !dmdCheck.nextJobsResetAt || new Date(dmdCheck.nextJobsResetAt).getTime() <= nowCheck) expiredMarkets.push('dark');
         if (!smdCheck || !smdCheck.nextJobsResetAt || new Date(smdCheck.nextJobsResetAt).getTime() <= nowCheck) expiredMarkets.push('soyuz');
+        if (!umdCheck || !umdCheck.nextJobsResetAt || new Date(umdCheck.nextJobsResetAt).getTime() <= nowCheck) expiredMarkets.push('usol');
 
-        // Order: soyuz → dark → home (furthest first)
+        // Order: usol → soyuz → dark → home (furthest first)
         const refreshOrder = [];
+        if (expiredMarkets.includes('usol')) refreshOrder.push('usol');
         if (expiredMarkets.includes('soyuz')) refreshOrder.push('soyuz');
         if (expiredMarkets.includes('dark')) refreshOrder.push('dark');
         if (expiredMarkets.includes('home')) refreshOrder.push('home');
@@ -495,8 +568,8 @@ async function runAutoFinishAllBg() {
             }, 30000);
         });
 
-        const { marketData, darkMarketData, soyuzMarketData, autoJobsCompletedResults: crRun, serverMaintenanceMap } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'autoJobsCompletedResults', 'serverMaintenanceMap']);
-        const jobsToRun = collectJobsBg(marketData, darkMarketData, crRun || [], serverMaintenanceMap, soyuzMarketData);
+        const { marketData, darkMarketData, soyuzMarketData, usolMarketData, autoJobsCompletedResults: crRun, serverMaintenanceMap } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'usolMarketData', 'autoJobsCompletedResults', 'serverMaintenanceMap']);
+        const jobsToRun = collectJobsBg(marketData, darkMarketData, crRun || [], serverMaintenanceMap, soyuzMarketData, usolMarketData);
 
         if (jobsToRun.length > 0) {
             const skippedList = jobsToRun._skippedMaintenance || [];
@@ -528,7 +601,7 @@ async function runAutoFinishAllBg() {
 
         // Check if only bugged/maintenance jobs remain
         const allUnfiltered = [];
-        for (const md of [marketData, darkMarketData, soyuzMarketData]) {
+        for (const md of [marketData, darkMarketData, soyuzMarketData, usolMarketData]) {
             if (!md) continue;
             const open = (md.jobs || []).filter(j => !j.isCompleted && !j.isExpired && SUPPORTED_JOB_TYPES_BG.includes(j.name));
             const taken = (md.recentJobs || []).filter(j => j.status === 'TAKEN' && SUPPORTED_JOB_TYPES_BG.includes(j.name));
@@ -551,11 +624,11 @@ async function runAutoFinishAllBg() {
         if (attempt < 3) {
             // Re-check updated job timers: if all markets now have future reset times,
             // reschedule at the earliest reset instead of waiting 60s for another attempt
-            const { marketData: mdTimerCheck, darkMarketData: dmdTimerCheck, soyuzMarketData: smdTimerCheck } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData']);
+            const { marketData: mdTimerCheck, darkMarketData: dmdTimerCheck, soyuzMarketData: smdTimerCheck, usolMarketData: umdTimerCheck } = await chrome.storage.local.get(['marketData', 'darkMarketData', 'soyuzMarketData', 'usolMarketData']);
             const nowTimerCheck = Date.now();
             let allFuture = true;
             let earliestResetMs = Infinity;
-            for (const md of [mdTimerCheck, dmdTimerCheck, smdTimerCheck]) {
+            for (const md of [mdTimerCheck, dmdTimerCheck, smdTimerCheck, umdTimerCheck]) {
                 if (!md || !md.nextJobsResetAt) { allFuture = false; break; }
                 const resetMs = new Date(md.nextJobsResetAt).getTime();
                 if (resetMs <= nowTimerCheck) { allFuture = false; break; }
@@ -585,6 +658,13 @@ async function runAutoFinishAllBg() {
 // --- Auto Clear IPs (background) ---
 // Servers to clear IPs from (skip D4RK RM7CE — often in maintenance)
 const CLEAR_IP_SERVERS = [
+    { name: 'URM7-H', id: '019e4052-c317-7388-9d71-8fed6faaaf99' },
+    { name: 'URM7-M', id: '019e4052-c317-7388-9d71-883ffb1560cd' },
+    { name: 'URM7-S5L2', id: '019e4052-c317-7388-9d71-85b98a02d5fb' },
+    { name: 'B43274N', id: '019e4052-c316-73aa-81f6-60ec61b61f0a' },
+    { name: 'B43272N', id: '019e4052-c316-73aa-81f6-5aa82fc72bdd' },
+    { name: 'B43271N', id: '019e4052-c316-73aa-81f6-567c9a8f5738' },
+    { name: 'D4RK RM7EG', id: '019e4052-c316-73aa-81f6-483e50247e61' },
     { name: 'SRM7-N3L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a109' },
     { name: 'SRM7-M', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a108' },
     { name: 'SRM7-N4L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a10a' },
@@ -594,8 +674,13 @@ const CLEAR_IP_SERVERS = [
     { name: 'RM7-N2L3', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a102' },
     { name: 'RM7-N2L2', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a101' },
     { name: 'RM7-N2ECP', id: '019da6f1-16f7-75a6-b6d3-0b1d5f92a105' },
+    { name: 'RM7-S4WCP', id: '019e4052-c316-73aa-81f6-448645a38c9e' },
+    { name: 'RM7-S4L3', id: '019e4052-c316-73aa-81f6-3dcef4d6873e' },
+    { name: 'RM7-S4L1', id: '019e4052-c315-71df-80da-4e334b96c9e6' },
     { name: 'RM7-S4L4', id: '019d1b0a-13a9-77dd-b41f-3ffb5f671742' },
+    { name: 'RM7-S4L2', id: '019e4052-c316-73aa-81f6-38c323c58eb2' },
     { name: 'RM7-E1SCP', id: '019d1b0a-13a9-77dd-b41f-3a21d490cb2d' },
+    { name: 'RM7-E1L2CT', id: '019d53aa-5101-7f08-b3dd-378b0ddcf7d0' },
     { name: 'RM7-E1L5', id: '019d1b0a-13a9-77dd-b41f-374ee144bd07' },
     { name: 'RM7-E1L3', id: '019d1b0a-13a9-77dd-b41f-33f06f2df284' }
 ];
@@ -915,7 +1000,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
         }
     }
     // Only re-schedule when nextJobsResetAt actually changes (new reset cycle), not on every market data update
-    if (area === 'local' && (changes.marketData || changes.darkMarketData || changes.soyuzMarketData)) {
+    if (area === 'local' && (changes.marketData || changes.darkMarketData || changes.soyuzMarketData || changes.usolMarketData)) {
         const resetChanged = (change) => {
             if (!change) return false;
             const oldReset = change.oldValue && change.oldValue.nextJobsResetAt;
@@ -925,7 +1010,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
         const homeReset = resetChanged(changes.marketData);
         const darkReset = resetChanged(changes.darkMarketData);
         const soyuzReset = resetChanged(changes.soyuzMarketData);
-        if (homeReset || darkReset || soyuzReset) {
+        const usolReset = resetChanged(changes.usolMarketData);
+        if (homeReset || darkReset || soyuzReset || usolReset) {
             // Clear old tracker/completedResults for reset markets (works even when popup is closed)
             chrome.storage.local.get(['autoJobsTracker', 'autoJobsCompletedResults'], (result) => {
                 let tracker = Array.isArray(result.autoJobsTracker) ? result.autoJobsTracker : [];
@@ -941,6 +1027,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
                 if (soyuzReset) {
                     tracker = tracker.filter(j => j.marketKey !== 'soyuz');
                     cr = cr.filter(j => j.marketKey !== 'soyuz');
+                }
+                if (usolReset) {
+                    tracker = tracker.filter(j => j.marketKey !== 'usol');
+                    cr = cr.filter(j => j.marketKey !== 'usol');
                 }
                 chrome.storage.local.set({ autoJobsTracker: tracker, autoJobsCompletedResults: cr });
             });

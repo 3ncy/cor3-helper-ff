@@ -1063,6 +1063,19 @@
             white-space: nowrap;
             margin-left: 3px;
             margin-right: 3px;
+            font-size: 11.5px;
+        }
+        .pinned-timer-symbol-usol {
+            color: #2592A7;
+            font-weight: bold;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-left: 3px;
+            margin-right: 3px;
+            font-size: 11.5px;
         }
         .pinned-timer-label {
             color: var(--accent-cyan);
@@ -1690,6 +1703,7 @@
             <button class="auto-jobs-tab active" data-market="home" id="autoJobsTabHome">🏠 HOME</button>
             <button class="auto-jobs-tab" data-market="dark" id="autoJobsTabDark">🌑 D4RK</button>
             <button class="auto-jobs-tab" data-market="soyuz" id="autoJobsTabSoyuz"><span style="color:#c33b3b;">☭</span> SOYUZ</button>
+            <button class="auto-jobs-tab" data-market="usol" id="autoJobsTabUsol"><span style="color:#2592A7;">☮</span> USOL</button>
         </div>
         <!-- HOME market jobs -->
         <div class="auto-jobs-tab-content active" id="autoJobsContentHome">
@@ -1701,6 +1715,10 @@
         </div>
         <!-- SOYUZ market jobs -->
         <div class="auto-jobs-tab-content" id="autoJobsContentSoyuz">
+            <div class="auto-jobs-no-jobs">Loading job data...</div>
+        </div>
+        <!-- USOL market jobs -->
+        <div class="auto-jobs-tab-content" id="autoJobsContentUsol">
             <div class="auto-jobs-no-jobs">Loading job data...</div>
         </div>
         <!-- Start/Stop Button -->
@@ -1794,6 +1812,17 @@
             </div>
             <div class="last-updated" id="soyuzMarketLastUpdated"></div>
             <div id="soyuzMarketContainer"><div class="no-decisions">No market data cached yet.</div></div>
+        </div>
+        <div class="sub-section">
+            <div class="market-sub-header">
+                <span class="market-sub-label" id="usolMarketLabel">Market-4</span>
+                <div style="display:flex;gap:4px;">
+                    <button id="pinUsolMarketBtn" class="refresh-btn-small pin-btn" title="Pin Market Timer">📌</button>
+                    <button id="refreshUsolMarketBtn" class="refresh-btn-small" title="Refresh Market">🔄</button>
+                </div>
+            </div>
+            <div class="last-updated" id="usolMarketLastUpdated"></div>
+            <div id="usolMarketContainer"><div class="no-decisions">No market data cached yet.</div></div>
         </div>
     </div>
 
@@ -1938,6 +1967,7 @@
                     <option value="home_jobs">Market-1 Jobs Reset</option>
                     <option value="dark_jobs">Market-2 Jobs Reset</option>
                     <option value="soyuz_jobs">Market-3 Jobs Reset</option>
+                    <option value="usol_jobs">Market-4 Jobs Reset</option>
                     <optgroup label="Expeditions" id="alarmExpeditionGroup"></optgroup>
                 </select>
             </div>
