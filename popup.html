@@ -212,7 +212,6 @@
 
         /* ===== Base Styles (using variables) ===== */
         body {
-            width: 300px;
             padding: 15px;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: var(--bg-primary);
@@ -223,6 +222,10 @@
             width: auto;
             min-width: 300px;
             max-width: 100vw;
+        }
+        #mainView {
+            columns: 300px auto;
+            gap: 10px;
         }
         h3 {
             margin-top: 0;
@@ -236,11 +239,13 @@
         }
         .sub-section {
             margin-bottom: 10px;
+            break-inside: avoid;
         }
         .toggles-section {
             margin-bottom: 10px;
             border-top: 1px solid var(--border);
             padding-top: 8px;
+            break-inside: avoid;
         }
         .section-title {
             font-size: 14px;
@@ -1305,6 +1310,7 @@
             border-radius: 8px;
             padding: 10px;
             margin-bottom: 8px;
+            break-inside: avoid;
         }
         .auto-jobs-section .section-title {
             display: flex;
