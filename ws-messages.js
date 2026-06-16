@@ -9,7 +9,22 @@ const COR3_WS_MAX_AGE = 24 * 60 * 60 * 1000;
 let _wsDbInstance = null;
 let _wsLastPurge = 0;
 
+function _wsInvalidateDb() {
+    _wsDbInstance = null;
+}
+
 function _wsOpenDb() {
+    if (_wsDbInstance) {
+        // Verify the cached connection is still usable
+        try {
+            if (!_wsDbInstance.objectStoreNames.contains(COR3_WS_STORE)) {
+                _wsInvalidateDb();
+            }
+        } catch (e) {
+            // Connection is dead (InvalidStateError) — reopen
+            _wsInvalidateDb();
+        }
+    }
     if (_wsDbInstance) return Promise.resolve(_wsDbInstance);
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(COR3_WS_DB_NAME, COR3_WS_DB_VERSION);
@@ -22,8 +37,9 @@ function _wsOpenDb() {
         };
         req.onsuccess = (e) => {
             _wsDbInstance = e.target.result;
-            _wsDbInstance.onclose = () => { _wsDbInstance = null; };
-            _wsDbInstance.onversionchange = () => { _wsDbInstance.close(); _wsDbInstance = null; };
+            _wsDbInstance.onclose = () => { _wsInvalidateDb(); };
+            _wsDbInstance.onerror = () => { _wsInvalidateDb(); };
+            _wsDbInstance.onversionchange = () => { _wsDbInstance.close(); _wsInvalidateDb(); };
             console.log('[COR3 WS-Log] IndexedDB opened successfully');
             resolve(_wsDbInstance);
         };
@@ -57,6 +73,19 @@ async function _wsPurgeOld() {
     }
 }
 
+async function _wsWriteEntry(entry) {
+    const db = await _wsOpenDb();
+    const tx = db.transaction(COR3_WS_STORE, 'readwrite');
+    tx.objectStore(COR3_WS_STORE).add(entry);
+    await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => {
+            console.error('[COR3 WS-Log] Write failed:', tx.error);
+            reject(tx.error);
+        };
+    });
+}
+
 async function cor3LogWsMessage(direction, message) {
     try {
         const entry = {
@@ -64,16 +93,18 @@ async function cor3LogWsMessage(direction, message) {
             direction: direction,
             message: String(message)
         };
-        const db = await _wsOpenDb();
-        const tx = db.transaction(COR3_WS_STORE, 'readwrite');
-        tx.objectStore(COR3_WS_STORE).add(entry);
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
-            tx.onerror = () => {
-                console.error('[COR3 WS-Log] Write failed:', tx.error);
-                reject(tx.error);
-            };
-        });
+        try {
+            await _wsWriteEntry(entry);
+        } catch (e) {
+            // Retry once on stale connection (NotFoundError / InvalidStateError)
+            if (e && (e.name === 'NotFoundError' || e.name === 'InvalidStateError')) {
+                console.warn('[COR3 WS-Log] Stale DB connection (' + e.name + ') — reopening and retrying');
+                _wsInvalidateDb();
+                await _wsWriteEntry(entry);
+            } else {
+                throw e;
+            }
+        }
         _wsPurgeOld();
     } catch (e) {
         console.error('[COR3 WS-Log] cor3LogWsMessage error:', e);
