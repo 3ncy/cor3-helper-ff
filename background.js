@@ -76,8 +76,6 @@ async function checkAutoChooseBackground() {
                             selectedOption: bestOpt.id
                         });
                         console.log(`[COR3 Helper BG] Auto-chose "${bestOpt.label}" (score: ${bestScore})`);
-                        // Refresh expedition data after a delay
-                        setTimeout(() => requestExpeditionsFromBg(), 3000);
                     }
                 } catch (e) { /* silent */ }
             }
@@ -91,7 +89,7 @@ async function checkAutoChooseBackground() {
 // Decision timer monitoring every 10 seconds — runs entirely in background
 setInterval(checkAutoChooseBackground, 10000);
 
-// --- Expedition polling (every 30 seconds if auto-features enabled) ---
+// --- Expedition data request (on-demand only, no polling) ---
 async function requestExpeditionsFromBg() {
     try {
         const tab = await getCor3Tab();
@@ -100,19 +98,6 @@ async function requestExpeditionsFromBg() {
         }
     } catch (e) { /* silent */ }
 }
-
-async function expeditionPolling() {
-    try {
-        const settings = await chrome.storage.sync.get(['decisionModifiers', 'autoSendMerc']);
-        const autoChooseEnabled = settings.decisionModifiers ? !!settings.decisionModifiers.autoChoose : false;
-        const autoSendEnabled = settings.autoSendMerc ? !!settings.autoSendMerc.enabled : false;
-
-        if (autoChooseEnabled || autoSendEnabled) {
-            await requestExpeditionsFromBg();
-        }
-    } catch (e) { /* silent */ }
-}
-setInterval(expeditionPolling, 30000);
 
 // --- Auto Finish All Jobs (background scheduling) ---
 const SUPPORTED_JOB_TYPES_BG = [

@@ -10,7 +10,7 @@ The use of automation tools may be detectable by the site's developers and could
 
 ## Features
 
-- **Theme Support** — Multiple color themes to match your preference
+- **Theme Support** — Multiple color themes to match your preference, including an "Original" theme matching the game's native UI colors
 - **Pop-up Window / Panel Support** — Exports the UI to pop-up window or side panel depending on your preference
 - **Refresh System** — Either by using "refresh all" button or by clicking "refresh" for each section, it refreshes related data available on the UI
 - **Pinned Timers** — Every timer except "RESTING" timer for mercenaries can be pinned to top of the UI for tracking
@@ -19,12 +19,14 @@ The use of automation tools may be detectable by the site's developers and could
 - **Auto ICE Wall Hacking** — Automatically solves ICE Wall hacking minigame. Detects triangle patterns and clicks them in the correct sequence to complete the puzzle
 - **Auto Simple Decrypt Hacking** — Automatically solves Simple Decrypt hacking minigame. Clicks the decrypt button and monitors progress until completion
 - **Auto Daily Hacking** — Fully automated daily ops solver. Opens daily ops tab, starts the task, detects the puzzle type (System Log Integrity or Signal Hack), solves it end-to-end, closes windows, and auto-disables the toggle after completion. Includes retry logic (up to 3 attempts) with automatic window cleanup between retries
-- **Auto Job Solver** — Automated market job solver supporting 9 job types: File Decryption, IP Injection, Data Download, Log Deletion, Log Download, Decrypt & Extract, File Elimination, Data Upload, and IP Cleanup. Features a tabbed UI showing HOME, D4RK, and SOYUZ market jobs with per-type checkboxes, a start/stop button, and a debug console with Jobs and Logs tabs. Jobs are sorted by server priority (furthest first) and job type priority, automatically handle endpoint setting (with hack-through if unreachable), server login (with hack if no active access), type-specific actions, and job completion with reward tracking. Checks server maintenance status before each job and skips jobs on servers currently in maintenance
+- **Auto Job Solver** — Automated market job solver supporting 9 job types: File Decryption, IP Injection, Data Download, Log Deletion, Log Download, Decrypt & Extract, File Elimination, Data Upload, and IP Cleanup. Features a tabbed UI showing HOME, D4RK, SOYUZ, and USOL market jobs with per-type checkboxes, a start/stop button, and a debug console with Jobs and Logs tabs. Jobs are sorted by server priority (furthest first) and job type priority, automatically handle endpoint setting (with hack-through if unreachable), server login (with hack if no active access), type-specific actions, and job completion with reward tracking. Checks server maintenance status before each job and skips jobs on servers currently in maintenance. Includes dynamic loadout management — automatically equips the right hack/decrypt software before each job and retries with loadout swaps on power/software errors
+- **Auto Dismiss Failed Jobs** — Toggle to automatically dismiss failed and bugged jobs after each solver run, keeping the job queue clean
 - **Auto Finish All Jobs** — Background scheduling that automatically starts the Auto Job Solver when new jobs become available after reset. Uses chrome.alarms to schedule runs at job reset times with retry logic. Works even when the popup is closed. Server maintenance–aware: skips jobs on servers currently in maintenance and schedules retries at the earlier of job reset or maintenance end.
 - **Auto Clear Generated IPs** — Periodically cleans up auto-generated IPs (10.x, 172.x, 192.x, 198.x) from servers, keeping at most 10 per server. Runs every 3 hours in the background. Automatically hacks servers if access has expired.
-- **D4RK Market Path-Through** — When the D4RK market server is unreachable (no-path-to-server), automatically attempts to establish a path by setting endpoints to intermediate servers (RM7-E1L5 → RM7-E1SCP), hacking them if needed for access, then retrying the D4RK endpoint.
+- **Market Path-Through** — When market servers (D4RK, SOYUZ, USOL) are unreachable (no-path-to-server), automatically attempts to establish a path by setting endpoints to intermediate servers, hacking them if needed for access, then retrying the market endpoint.
 - **Daily Ops** — Countdown to your next daily ops task with streak bonus, difficulty, and claim status
-- **Market Monitoring** — View Market-1 (HOME), Market-2 (D4RK), and Market-3 (SOYUZ) stats, job reset timers, items list, and jobs list (with Category/Server/Reward columns)
+- **Market Monitoring** — View Market-1 (HOME), Market-2 (D4RK), Market-3 (SOYUZ), and Market-4 (USOL) stats, job reset timers, items list (with INFO popup for item details), and jobs list (with Category/Server/Reward columns)
+- **Loadout Viewer** — View and manage your equipped hardware (CPU/GPU/RAM/PSU) and installed software. Game-style card UI with hardware specs, software power ratios, resource supply/demand overview with boot status, CHANGE/INFO buttons for hardware, and sort/search/equip/unequip for software
 - **Active Expedition Tracking** — See active expeditions with remaining timer, cost, risk, insurance, and mercenary info
 - **Expedition Decisions** — View and respond to pending decisions by clicking them with score calculation
 - **Auto Choose Decision** — Auto choose decisions 1-min before deadline according to their scoring. Configure loot/risk modifiers to change how scoring works.
@@ -32,13 +34,18 @@ The use of automation tools may be detectable by the site's developers and could
 - **Mercenaries** — View mercenary callsign, rank, status, specialization, traits, mission count, cost, rest timers, risk, failed-survive chance, and death chance.
 - **Auto Send Mercenary** — Enable "auto send" toggle and select a mercenary to send just after current expedition is done. It auto-claims previous reward container.
 - **Auto Choose Mercenary** — Enable "auto choose" toggle for extension to do best mercenary selection according to their cost and risk values.
+- **Auto Sell Cheapest Items** — Enable "auto sell" toggle for extension to sell two cheapest items from inventory automatically when there is not enough space to pickup expedition container items.
 - **Archived Expeditions** — View past expeditions with outcome, cost, risk, location, loot container details and item images. Auto-loaded on startup
 - **Multi-Alarm System** — Create multiple configurable alarms for any timer (daily ops, market job resets, expeditions). Each alarm has its own threshold, volume, continuous mode, and on/off toggle
 - **Move Notifications** — Option to move in-game notification toasts and history panel from the right side to the left side of the screen
+- **Resizable Network Map** — Toggle to make the in-game network map window resizable via drag
+- **Helper-Only Mode** — Toggle to hide all automation features, converting the extension to a pure info/helper tool
+- **Auto Update Markets** — Toggle to automatically refresh market data when WebSocket events arrive
 - **Version Tracking** — Displays extension, web, system, and patch versions
 - **Check for Updates** — Compare your installed extension, web, and system versions against the latest on GitHub. It lets user know if an update is required for extension or if web/system versions are different from what's stored.
 - **Cache-First Design** — Data loads instantly from cache on popup open. Use the "Refresh All" button or per-section refresh buttons to fetch fresh data
-- **Real-Time Updates** — WebSocket listeners auto-update daily ops, markets, expeditions, decisions, inventory, mercenaries, and archived expeditions live when data arrives — even if the popup is opened before data is ready
+- **Real-Time Updates** — WebSocket listeners auto-update daily ops, markets, expeditions, decisions, inventory, mercenaries, loadout, and archived expeditions live when data arrives — even if the popup is opened before data is ready
+- **DevTools WS Inspector** — Built-in Chrome DevTools panel for real-time WebSocket message inspection. Features include: direction/event/action/server column filtering, format dropdown (Raw / JSON-pretty / Interactive Tree View with inline object/array previews), search with highlight & navigation inside message detail (including tree view traversal with auto-expand), export filtered data as JSON or Markdown table, paginated log display (1000 messages per page) with section selector, IndexedDB-backed storage with 24-hour auto-cleanup, and resizable columns/detail pane
 - **Lightweight** — Only intercepts existing WebSocket traffic and re-triggers some API calls that the game already sends
 
 ## Installation
@@ -79,7 +86,7 @@ See the parent project https://github.com/Femtoce11/cor3-helper.
 - **Auto ICE Wall Hacking** — Toggle the switch to enable. It automatically solves ICE Wall hacking minigames by detecting and clicking triangle patterns.
 - **Auto Simple Decrypt Hacking** — Toggle the switch to enable. It automatically solves Simple Decrypt hacking minigames by clicking the decrypt button and monitoring progress.
 - **Auto Daily Hacking** — Toggle the switch to enable. It opens daily ops, starts the task, solves the puzzle automatically, and disables itself when done.
-- **Auto Job Solver** — Toggle the switch to reveal job selection UI. Choose job types from HOME, D4RK, and SOYUZ market tabs, then click Start. The debug console shows real-time job progress and logs. Toggle "Auto Finish All Jobs" for fully automatic operation.
+- **Auto Job Solver** — Toggle the switch to reveal job selection UI. Choose job types from HOME, D4RK, SOYUZ, and USOL market tabs, then click Start. The debug console shows real-time job progress and logs. Toggle "Auto Finish All Jobs" for fully automatic operation.
 - **Auto Clear Generated IPs** — Toggle the switch to enable. Runs every 3 hours in the background to clean up excess auto-generated IPs from servers.
 - **Set decision scores** by clicking edit button. After the change click save button to keep the changes. This way you can change default scoring that extension shows next to each decision.
 - **Enable auto choose decision** for extension to automatically choose best decision according to scoring which is calculated by default/modified loot/risk modifiers.

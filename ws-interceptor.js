@@ -125,7 +125,8 @@
 
     // Also provide a way to request expedition data via existing sockets
     window.__cor3RequestExpeditions = function () {
-        var msg = '42["event",{"event":{"name":"expeditions","action":"get.config"}}]';
+        var mid = window.__cor3LastMarketId || '019d3ea4-85bd-7389-904d-8f7c85841134';
+        var msg = '42["event",{"event":{"name":"expeditions","action":"get.config"},"data":{"marketId":"' + mid + '"}}]';
         var codec = window.__cor3MsgpackCodec;
         var toSend = msg;
         if (codec && codec.isReady()) {

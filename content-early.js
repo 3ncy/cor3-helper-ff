@@ -58,24 +58,6 @@ var webVersion = null;
         const init = args[1];
         try {
             const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
-            if (url.includes('cor3') || url.includes('corie')) {
-                let headers = init && init.headers;
-                if (!headers && input && input.headers) headers = input.headers;
-                if (headers) {
-                    let authVal = null;
-                    if (typeof headers.get === 'function') {
-                        authVal = headers.get('Authorization') || headers.get('authorization');
-                    } else if (typeof headers === 'object') {
-                        authVal = headers['Authorization'] || headers['authorization'];
-                    }
-                    if (authVal && authVal.startsWith('Bearer ')) {
-                        capturedBearerToken = authVal;
-                        setTimeout(function () {
-                            window.postMessage({ type: 'COR3_BEARER_TOKEN', token: authVal }, '*');
-                        }, 200);
-                    }
-                }
-            }
             // Intercept translation.json for webVersion
             if (url.includes('translation.json')) { // url = /locales/tr/translation.json?v=v1.17.21
                 try {
@@ -265,11 +247,35 @@ var webVersion = null;
                             window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: data }, '*');
                         } else if (data instanceof ArrayBuffer || (typeof Uint8Array !== 'undefined' && ArrayBuffer.isView(data))) {
                             decodeBinaryMsg(data, function (str) {
-                                if (str) window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                                if (str) {
+                                    window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                                    // Capture token from binary 40{...} connect messages
+                                    if (str.indexOf('40{') === 0) {
+                                        try {
+                                            var cp = JSON.parse(str.substring(2));
+                                            if (cp.token && cp.token.startsWith('Bearer ')) {
+                                                capturedBearerToken = cp.token;
+                                                window.postMessage({ type: 'COR3_BEARER_TOKEN', token: cp.token }, '*');
+                                            }
+                                        } catch (e) { /* silent */ }
+                                    }
+                                }
                             });
                         } else if (data instanceof Blob) {
                             decodeBinaryMsg(data, function (str) {
-                                if (str) window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                                if (str) {
+                                    window.postMessage({ type: 'COR3_WS_LOG', direction: 'sent', message: str }, '*');
+                                    // Capture token from binary 40{...} connect messages
+                                    if (str.indexOf('40{') === 0) {
+                                        try {
+                                            var cp = JSON.parse(str.substring(2));
+                                            if (cp.token && cp.token.startsWith('Bearer ')) {
+                                                capturedBearerToken = cp.token;
+                                                window.postMessage({ type: 'COR3_BEARER_TOKEN', token: cp.token }, '*');
+                                            }
+                                        } catch (e) { /* silent */ }
+                                    }
+                                }
                             });
                         }
                     } catch (e) { /* silent */ }
@@ -416,6 +422,42 @@ var webVersion = null;
             }, '*');
         }
 
+        // Intercept loadout responses
+        if (eventName === 'loadout' && payload) {
+            var loadoutAction = payload.event ? payload.event.action : null;
+            if (payload.error) {
+                window.postMessage({
+                    type: 'COR3_WS_LOADOUT_ERROR',
+                    action: loadoutAction,
+                    error: payload.error
+                }, '*');
+            }
+            if (payload.data) {
+                window.postMessage({
+                    type: 'COR3_WS_LOADOUT',
+                    action: loadoutAction,
+                    loadout: payload.data
+                }, '*');
+                // Cache loadout data in window global for auto-job-solver access
+                window.__cor3LoadoutData = payload.data;
+                // Also post as auto-job event so solver waitForEvent can catch it
+                window.postMessage({
+                    type: 'COR3_AUTOJOB_LOADOUT',
+                    action: loadoutAction,
+                    data: payload.data,
+                    error: null
+                }, '*');
+            }
+            if (payload.error) {
+                window.postMessage({
+                    type: 'COR3_AUTOJOB_LOADOUT',
+                    action: loadoutAction,
+                    data: null,
+                    error: payload.error
+                }, '*');
+            }
+        }
+
         // Intercept mercenary responses
         if (eventName === 'expeditions' && payload && payload.event && payload.event.action === 'get.mercenaries') {
             // Cache mercenary IDs for configure calls
@@ -432,29 +474,37 @@ var webVersion = null;
                     window.__cor3RequestExpeditionConfig();
                 }, 500);
             } else if (window.__cor3CachedMercIds) {
-                // Config already available, configure each merc sequentially with human delays
-                var ids = window.__cor3ExpConfigIds;
-                var mercIds = window.__cor3CachedMercIds.slice();
-                (function configureNext(i) {
-                    if (i >= mercIds.length) return;
-                    setTimeout(function () {
-                        window.__cor3RequestMercConfigure(mercIds[i], null, ids.locationConfigId, ids.zoneConfigId, ids.objectiveId);
-                        configureNext(i + 1);
-                    }, humanDelay() + 400);
-                })(0);
+                // Debounce: skip if we already configured mercs within the last 10 seconds
+                var now = Date.now();
+                if (window.__cor3LastMercConfigureTime && (now - window.__cor3LastMercConfigureTime) < 10000) {
+                    console.log('[COR3 Helper] Skipping duplicate merc configure (debounced)');
+                } else {
+                    window.__cor3LastMercConfigureTime = now;
+                    var ids = window.__cor3ExpConfigIds;
+                    var mercIds = window.__cor3CachedMercIds.slice();
+                    (function configureNext(i) {
+                        if (i >= mercIds.length) return;
+                        setTimeout(function () {
+                            window.__cor3RequestMercConfigure(mercIds[i], null, ids.locationConfigId, ids.zoneConfigId, ids.goalId);
+                            configureNext(i + 1);
+                        }, humanDelay() + 400);
+                    })(0);
+                }
             }
             return;
         }
 
-        // Intercept expedition config response (locations/zones/objectives)
+        // Intercept expedition config response (locations/zones/goals)
         if (eventName === 'expeditions' && payload && payload.event && payload.event.action === 'get.config') {
             // Store config IDs for mercenary configure calls
             if (payload.data && payload.data.locations && payload.data.locations.length > 0) {
                 var loc = payload.data.locations[0];
+                var zone0 = loc.zones && loc.zones[0] ? loc.zones[0] : null;
+                var goal0 = zone0 && zone0.goals && zone0.goals[0] ? zone0.goals[0] : null;
                 window.__cor3ExpConfigIds = {
                     locationConfigId: loc.id,
-                    zoneConfigId: loc.zones && loc.zones[0] ? loc.zones[0].id : null,
-                    objectiveId: loc.zones && loc.zones[0] && loc.zones[0].objectives && loc.zones[0].objectives[0] ? loc.zones[0].objectives[0].id : null
+                    zoneConfigId: zone0 ? zone0.id : null,
+                    goalId: goal0 ? goal0.id : null
                 };
             }
             window.postMessage({
@@ -468,7 +518,7 @@ var webVersion = null;
                 (function configureNext(i) {
                     if (i >= mercIds.length) return;
                     setTimeout(function () {
-                        window.__cor3RequestMercConfigure(mercIds[i], null, ids.locationConfigId, ids.zoneConfigId, ids.objectiveId);
+                        window.__cor3RequestMercConfigure(mercIds[i], null, ids.locationConfigId, ids.zoneConfigId, ids.goalId);
                         configureNext(i + 1);
                     }, humanDelay() + 400);
                 })(0);
@@ -482,6 +532,13 @@ var webVersion = null;
                 type: 'COR3_WS_CONTAINER_OPENED',
                 data: payload.data
             }, '*');
+            // Also update expedition data so UI shows container items
+            if (payload.data && payload.data.id) {
+                window.postMessage({
+                    type: 'COR3_WS_EXPEDITIONS',
+                    expeditions: [payload.data]
+                }, '*');
+            }
             return;
         }
 
@@ -550,7 +607,7 @@ var webVersion = null;
                 type: 'COR3_WS_DECISIONS',
                 decisions: [] // Clear decisions by sending empty array
             }, '*');
-            // Immediately request fresh expedition data to update UI and reset 30-second timer
+            // Immediately request fresh expedition data to update UI after launch
             setTimeout(function() {
                 window.__cor3RequestExpeditions();
             }, 1000 + Math.floor(Math.random() * 500));
@@ -701,10 +758,11 @@ var webVersion = null;
                     }, '*');
                 }
             }
-            // Intercept get.map for server maintenance data
+            // Intercept get.map for server maintenance data + server type info
             if (payload.event.action === 'get.map' && payload.data && payload.data.servers) {
                 var servers = payload.data.servers;
                 var maintenanceInfo = {};
+                var serverTypeMap = {};
                 for (var si = 0; si < servers.length; si++) {
                     var srv = servers[si];
                     maintenanceInfo[srv.id] = {
@@ -712,7 +770,14 @@ var webVersion = null;
                         isInMaintenance: !!srv.isInMaintenance,
                         maintenanceEndsAt: srv.maintenanceEndsAt || null
                     };
+                    // Cache server type + defence rate for loadout power calculations
+                    serverTypeMap[srv.id] = {
+                        serverName: srv.serverName,
+                        serverTypeName: srv.serverTypeName || null,
+                        serverDefenceRate: srv.serverDefenceRate || 0
+                    };
                 }
+                window.__cor3ServerTypeMap = serverTypeMap;
                 window.postMessage({ type: 'COR3_WS_NETWORK_MAP', servers: maintenanceInfo }, '*');
             }
         }
@@ -801,6 +866,9 @@ var webVersion = null;
             }
             if (dAction === 'update.file' || dAction === 'open.file') {
                 window.postMessage({ type: 'COR3_AUTOJOB_DESKTOP_FILE', data: payload.data, error: payload.error || null }, '*');
+            }
+            if (dAction === 'get.file.analysis') {
+                window.postMessage({ type: 'COR3_AUTOJOB_FILE_ANALYSIS', data: payload.data, error: payload.error || null }, '*');
             }
             if (dAction === 'get.options') {
                 console.log('[COR3 Helper] Desktop get.options received — folders:', payload.data && payload.data.folders ? payload.data.folders.length : 0);
@@ -979,10 +1047,11 @@ var webVersion = null;
         return true;
     };
 
-    // Request expedition config (returns location/zone/objective IDs)
-    window.__cor3RequestExpeditionConfig = function () {
-        console.log('[COR3 Helper] Requesting expedition config');
-        var msg = '42["event",{"event":{"name":"expeditions","action":"get.config"}}]';
+    // Request expedition config (returns location/zone/goal IDs)
+    window.__cor3RequestExpeditionConfig = function (marketId) {
+        var mid = marketId || window.__cor3LastMarketId || '019d3ea4-85bd-7389-904d-8f7c85841134';
+        console.log('[COR3 Helper] Requesting expedition config for market:', mid);
+        var msg = '42["event",{"event":{"name":"expeditions","action":"get.config"},"data":{"marketId":"' + mid + '"}}]';
         wsSend(msg);
         return true;
     };
@@ -991,7 +1060,7 @@ var webVersion = null;
     window.__cor3PendingMercConfigures = [];
 
     // Request mercenary configure details (cost, risk, chances)
-    window.__cor3RequestMercConfigure = function (mercenaryId, marketId, locationConfigId, zoneConfigId, objectiveId) {
+    window.__cor3RequestMercConfigure = function (mercenaryId, marketId, locationConfigId, zoneConfigId, goalId) {
         var mid = marketId || window.__cor3LastMarketId || '019d3ea4-85bd-7389-904d-8f7c85841134';
         console.log('[COR3 Helper] Requesting configure for mercenary:', mercenaryId);
         window.__cor3PendingMercConfigures.push(mercenaryId);
@@ -1000,7 +1069,7 @@ var webVersion = null;
             marketId: mid,
             locationConfigId: locationConfigId,
             zoneConfigId: zoneConfigId,
-            objectiveId: objectiveId,
+            goalId: goalId,
             hasInsurance: false
         };
         var msg = '42["event",{"event":{"name":"expeditions","action":"configure"},"data":' + JSON.stringify(data) + '}]';
@@ -1046,10 +1115,11 @@ var webVersion = null;
     // Send a WS message on the active socket (most recently received messages)
     // Throttled: minimum 400ms between sends to avoid "Too many requests" errors.
     // Uses timestamp-based approach: if last send was <400ms ago, delay this send.
-    var WS_THROTTLE_MS = 400;
+    var WS_THROTTLE_MS = 150;
     var wsSendLastTime = 0;
     var wsSendQueue = [];
     var wsSendFlushTimer = null;
+    var WS_QUEUE_MAX = 50;
 
     function wsSendRaw(msg) {
         var toSend = msg;
@@ -1113,6 +1183,12 @@ var webVersion = null;
         } else {
             // Queue and schedule flush
             wsSendQueue.push(msg);
+            // Overflow protection: drop oldest messages if queue grows too large
+            if (wsSendQueue.length > WS_QUEUE_MAX) {
+                var dropped = wsSendQueue.length - WS_QUEUE_MAX;
+                wsSendQueue = wsSendQueue.slice(dropped);
+                console.warn('[COR3 Helper] WS send queue overflow — dropped ' + dropped + ' oldest message(s)');
+            }
             if (!wsSendFlushTimer) {
                 var wait = Math.max(0, WS_THROTTLE_MS - elapsed);
                 wsSendFlushTimer = setTimeout(wsSendFlush, wait);
@@ -1210,6 +1286,29 @@ var webVersion = null;
         return true;
     };
 
+    // --- Loadout WS send functions ---
+    window.__cor3RequestLoadout = function () {
+        console.log('[COR3 Helper] Requesting loadout data');
+        var msg = '42["event",{"event":{"name":"loadout","action":"get.options"}}]';
+        wsSend(msg);
+        return true;
+    };
+    window.__cor3EquipHardware = function (moduleConfigId) {
+        console.log('[COR3 Helper] Equipping hardware:', moduleConfigId);
+        var msg = '42["event",{"event":{"name":"loadout","action":"equip.hardware"},"data":{"moduleConfigId":"' + moduleConfigId + '"}}]';
+        wsSend(msg);
+    };
+    window.__cor3EquipSoftware = function (moduleConfigId) {
+        console.log('[COR3 Helper] Equipping software:', moduleConfigId);
+        var msg = '42["event",{"event":{"name":"loadout","action":"equip.software"},"data":{"moduleConfigId":"' + moduleConfigId + '"}}]';
+        wsSend(msg);
+    };
+    window.__cor3UnequipSoftware = function (moduleConfigId) {
+        console.log('[COR3 Helper] Unequipping software:', moduleConfigId);
+        var msg = '42["event",{"event":{"name":"loadout","action":"unequip.software"},"data":{"moduleConfigId":"' + moduleConfigId + '"}}]';
+        wsSend(msg);
+    };
+
     // --- Auto Job Solver WS send functions ---
     window.__cor3AutoJobTake = function (marketId, jobId) {
         var msg = '42["event",{"event":{"name":"market","action":"job.take"},"data":{"marketId":"' + marketId + '","jobId":"' + jobId + '"}}]';
@@ -1217,6 +1316,10 @@ var webVersion = null;
     };
     window.__cor3AutoJobComplete = function (marketId, jobId) {
         var msg = '42["event",{"event":{"name":"market","action":"job.complete"},"data":{"marketId":"' + marketId + '","jobId":"' + jobId + '"}}]';
+        wsSend(msg);
+    };
+    window.__cor3AutoJobDismiss = function (marketId, jobId) {
+        var msg = '42["event",{"event":{"name":"market","action":"job.dismiss"},"data":{"marketId":"' + marketId + '","jobId":"' + jobId + '"}}]';
         wsSend(msg);
     };
     window.__cor3AutoJobGetMarketOptions = function (marketId) {
@@ -1296,6 +1399,27 @@ var webVersion = null;
     };
     window.__cor3AutoJobTransitRemove = function (serverId, ip) {
         var msg = '42["event",{"event":{"name":"sai","action":"transit.remove"},"data":{"serverId":"' + serverId + '","ip":"' + ip + '"}}]';
+        wsSend(msg);
+    };
+    // --- Auto Job Solver: file analysis + loadout commands ---
+    window.__cor3AutoJobGetFileAnalysis = function (fileId) {
+        var msg = '42["event",{"event":{"name":"desktop","action":"get.file.analysis"},"data":{"fileId":"' + fileId + '"}}]';
+        wsSend(msg);
+    };
+    window.__cor3AutoJobRequestLoadout = function () {
+        var msg = '42["event",{"event":{"name":"loadout","action":"get.options"}}]';
+        wsSend(msg);
+    };
+    window.__cor3AutoJobEquipHardware = function (moduleConfigId) {
+        var msg = '42["event",{"event":{"name":"loadout","action":"equip.hardware"},"data":{"moduleConfigId":"' + moduleConfigId + '"}}]';
+        wsSend(msg);
+    };
+    window.__cor3AutoJobEquipSoftware = function (moduleConfigId) {
+        var msg = '42["event",{"event":{"name":"loadout","action":"equip.software"},"data":{"moduleConfigId":"' + moduleConfigId + '"}}]';
+        wsSend(msg);
+    };
+    window.__cor3AutoJobUnequipSoftware = function (moduleConfigId) {
+        var msg = '42["event",{"event":{"name":"loadout","action":"unequip.software"},"data":{"moduleConfigId":"' + moduleConfigId + '"}}]';
         wsSend(msg);
     };
     window.__cor3RequestUpdater = function () {
@@ -2437,10 +2561,15 @@ var webVersion = null;
             window.__cor3RequestArchivedExpeditions();
         }, 8000);
 
+        // Fetch loadout data
+        setTimeout(function () {
+            window.__cor3RequestLoadout();
+        }, 9000);
+
         // Fetch updater data for patch version
         setTimeout(function () {
             window.__cor3RequestUpdater();
-        }, 10000);
+        }, 11000);
 
         // Mercenaries are fetched via Refresh All in popup or on explicit request
     };
@@ -2479,6 +2608,18 @@ var webVersion = null;
         }
         if (event.data && event.data.type === 'COR3_REQUEST_STASH') {
             window.__cor3RequestStash();
+        }
+        if (event.data && event.data.type === 'COR3_REQUEST_LOADOUT') {
+            window.__cor3RequestLoadout();
+        }
+        if (event.data && event.data.type === 'COR3_EQUIP_HARDWARE') {
+            window.__cor3EquipHardware(event.data.moduleConfigId);
+        }
+        if (event.data && event.data.type === 'COR3_EQUIP_SOFTWARE') {
+            window.__cor3EquipSoftware(event.data.moduleConfigId);
+        }
+        if (event.data && event.data.type === 'COR3_UNEQUIP_SOFTWARE') {
+            window.__cor3UnequipSoftware(event.data.moduleConfigId);
         }
         if (event.data && event.data.type === 'COR3_REQUEST_MARKET') {
             window.__cor3RequestMarket();
@@ -2576,6 +2717,7 @@ var webVersion = null;
             var d = event.data.data || {};
             if (cmd === 'job.take') window.__cor3AutoJobTake(d.marketId, d.jobId);
             else if (cmd === 'job.complete') window.__cor3AutoJobComplete(d.marketId, d.jobId);
+            else if (cmd === 'job.dismiss') window.__cor3AutoJobDismiss(d.marketId, d.jobId);
             else if (cmd === 'get.jobs') window.__cor3AutoJobGetMarketOptions(d.marketId);
             else if (cmd === 'get.options') window.__cor3AutoJobGetMarketOptions(d.marketId); // legacy fallback
             else if (cmd === 'set.endpoint') window.__cor3AutoJobSetEndpoint(d.serverId);
@@ -2596,6 +2738,11 @@ var webVersion = null;
             else if (cmd === 'file.delete') window.__cor3AutoJobFileDelete(d.serverId, d.fileId);
             else if (cmd === 'file.upload') window.__cor3AutoJobFileUpload(d.serverId, d.name, d.sizeMb);
             else if (cmd === 'transit.remove') window.__cor3AutoJobTransitRemove(d.serverId, d.ip);
+            else if (cmd === 'get.file.analysis') window.__cor3AutoJobGetFileAnalysis(d.fileId);
+            else if (cmd === 'loadout.get') window.__cor3AutoJobRequestLoadout();
+            else if (cmd === 'loadout.equip.hardware') window.__cor3AutoJobEquipHardware(d.moduleConfigId);
+            else if (cmd === 'loadout.equip.software') window.__cor3AutoJobEquipSoftware(d.moduleConfigId);
+            else if (cmd === 'loadout.unequip.software') window.__cor3AutoJobUnequipSoftware(d.moduleConfigId);
         }
     });
 

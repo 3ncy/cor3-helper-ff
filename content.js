@@ -71,6 +71,51 @@ setInterval(() => {
     window.addEventListener('message', onDone);
 }, 30000); // check every 30s
 
+// Helper: sell cheapest sellable items to free up `count` stash slots
+function autoSellCheapestItems(items, count, callback) {
+    if (!items || count <= 0) { if (callback) callback(); return; }
+    // Filter sellable items, sort by price ascending (cheapest first)
+    const sellable = items
+        .filter(i => i.canSell && i.sellPrice && i.sellPrice > 0)
+        .sort((a, b) => a.sellPrice - b.sellPrice);
+    const toSell = sellable.slice(0, Math.max(count, 1));
+    if (toSell.length === 0) {
+        console.log('[COR3 Helper] Auto-sell: no sellable items found');
+        if (callback) callback();
+        return;
+    }
+    console.log('[COR3 Helper] Auto-sell: selling', toSell.length, 'item(s):', toSell.map(i => i.name + ' (' + i.sellPrice + ')').join(', '));
+    let idx = 0;
+    function sellNext() {
+        if (idx >= toSell.length) { if (callback) callback(); return; }
+        const item = toSell[idx++];
+        window.postMessage({ type: 'COR3_SELL_ITEM', itemId: item.id, quantity: 1 }, '*');
+        setTimeout(sellNext, 1200 + Math.floor(Math.random() * 300));
+    }
+    sellNext();
+}
+
+// Helper: disable auto-send mercenary due to full stash
+function disableAutoSendDueToStashFull() {
+    chrome.storage.sync.get('autoSendMerc', (settings) => {
+        if (settings.autoSendMerc) {
+            chrome.storage.sync.set({
+                autoSendMerc: {
+                    ...settings.autoSendMerc,
+                    enabled: false,
+                    disabledReason: 'stash_full'
+                }
+            });
+        }
+    });
+    window.postMessage({
+        type: 'COR3_STASH_FULL_WARNING',
+        message: 'Stash is full. Clear stash before claiming more items. Auto-send mercenary disabled.'
+    }, '*');
+    autoSendInProgress = false;
+    autoSendExpeditionId = null;
+}
+
 // --- Listen for data relayed from content-early.js (MAIN world) ---
 window.addEventListener('message', (event) => {
     if (event.source !== window) return;
@@ -90,6 +135,7 @@ window.addEventListener('message', (event) => {
     // Update decisions — always replace with fresh data from expedition messages
     if (event.data && event.data.type === 'COR3_WS_DECISIONS') {
         chrome.storage.local.set({ expeditionDecisions: event.data.decisions });
+        checkAutoChooseFromContent(event.data.decisions);
     }
     if (event.data && event.data.type === 'COR3_WS_STASH') {
         chrome.storage.local.set({ stashData: event.data.stash, stashDataUpdatedAt: now });
@@ -139,6 +185,12 @@ window.addEventListener('message', (event) => {
     }
     if (event.data && event.data.type === 'COR3_WS_USOL_MARKET') {
         chrome.storage.local.set({ usolMarketData: event.data.market, usolMarketAvailable: true, usolMarketDataUpdatedAt: now });
+    }
+    if (event.data && event.data.type === 'COR3_WS_LOADOUT') {
+        chrome.storage.local.set({ loadoutData: event.data.loadout, loadoutAction: event.data.action, loadoutUpdatedAt: now, loadoutError: null });
+    }
+    if (event.data && event.data.type === 'COR3_WS_LOADOUT_ERROR') {
+        chrome.storage.local.set({ loadoutError: event.data.error, loadoutErrorAction: event.data.action, loadoutUpdatedAt: now });
     }
     // Handle dark market unreachable — keep cached data, set flag
     if (event.data && event.data.type === 'COR3_WS_DARK_MARKET_UNREACHABLE') {
@@ -226,57 +278,81 @@ window.addEventListener('message', (event) => {
                 }
 
                 if (hasSpace) {
-                    console.log('[COR3 Helper] Auto-send: Sufficient space, collecting all...');
+                    console.log('[COR3 Helper] Auto-send: Sufficient space, collecting all in 10s...');
                     setTimeout(() => {
                         window.postMessage({ type: 'COR3_COLLECT_ALL', expeditionId: autoSendExpeditionId }, '*');
-                    }, 1000 + Math.floor(Math.random() * 500));
+                    }, 10000 + Math.floor(Math.random() * 500));
                 } else {
-                    console.log('[COR3 Helper] Auto-send: Insufficient space, disabling auto-container-claim');
-                    // Disable auto-send temporarily due to full stash
-                    chrome.storage.sync.get('autoSendMerc', (settings) => {
-                        if (settings.autoSendMerc) {
-                            chrome.storage.sync.set({
-                                autoSendMerc: {
-                                    ...settings.autoSendMerc,
-                                    enabled: false,
-                                    disabledReason: 'stash_full'
+                    // Check if auto-sell cheapest is enabled
+                    chrome.storage.sync.get('autoSellCheapest', (sellData) => {
+                        if (sellData.autoSellCheapest && stash && stash.items) {
+                            const availableSpace = stash.maxCapacity - stash.currentUsage;
+                            const shortfall = spaceNeeded - availableSpace;
+                            console.log('[COR3 Helper] Auto-sell: need', shortfall, 'more slot(s), selling cheapest items');
+                            autoSellCheapestItems(stash.items, shortfall, () => {
+                                // After selling, refresh stash then retry collect
+                                window.postMessage({ type: 'COR3_REQUEST_STASH' }, '*');
+                                setTimeout(() => {
+                                    console.log('[COR3 Helper] Auto-sell done, collecting all in 10s...');
+                                    setTimeout(() => {
+                                        window.postMessage({ type: 'COR3_COLLECT_ALL', expeditionId: autoSendExpeditionId }, '*');
+                                    }, 10000 + Math.floor(Math.random() * 500));
+                                }, 3000);
+                            });
+                        } else {
+                            console.log('[COR3 Helper] Auto-send: Insufficient space, disabling auto-container-claim');
+                            chrome.storage.sync.get('autoSendMerc', (settings) => {
+                                if (settings.autoSendMerc) {
+                                    chrome.storage.sync.set({
+                                        autoSendMerc: {
+                                            ...settings.autoSendMerc,
+                                            enabled: false,
+                                            disabledReason: 'stash_full'
+                                        }
+                                    });
                                 }
                             });
+                            const availableSpace2 = stash ? stash.maxCapacity - stash.currentUsage : 0;
+                            window.postMessage({
+                                type: 'COR3_STASH_FULL_WARNING',
+                                message: `Stash is full. Need ${spaceNeeded} spaces but only ${availableSpace2} available. Clear stash before claiming more items. Auto-send mercenary disabled.`
+                            }, '*');
+                            autoSendInProgress = false;
                         }
                     });
-                    // Notify user with specific space information
-                    const availableSpace = stash ? stash.maxCapacity - stash.currentUsage : 0;
-                    window.postMessage({
-                        type: 'COR3_STASH_FULL_WARNING',
-                        message: `Stash is full. Need ${spaceNeeded} spaces but only ${availableSpace} available. Clear stash before claiming more items. Auto-send mercenary disabled.`
-                    }, '*');
-                    autoSendInProgress = false;
                 }
             });
         }
     }
     // Handle stash full error from collect.all
     if (event.data && event.data.type === 'COR3_WS_STASH_FULL') {
-        console.log('[COR3 Helper] Stash full error detected, disabling auto-send mercenary');
-        // Disable auto-send temporarily due to full stash
-        chrome.storage.sync.get('autoSendMerc', (settings) => {
-            if (settings.autoSendMerc) {
-                chrome.storage.sync.set({
-                    autoSendMerc: {
-                        ...settings.autoSendMerc,
-                        enabled: false,
-                        disabledReason: 'stash_full'
+        console.log('[COR3 Helper] Stash full error detected');
+        chrome.storage.sync.get('autoSellCheapest', (sellData) => {
+            if (sellData.autoSellCheapest) {
+                // Try to auto-sell cheapest items and retry
+                chrome.storage.local.get('stashData', (result) => {
+                    const stash = result.stashData;
+                    if (stash && stash.items) {
+                        console.log('[COR3 Helper] Auto-sell: selling cheapest items to free space after collect.all stash-full');
+                        autoSellCheapestItems(stash.items, 5, () => {
+                            window.postMessage({ type: 'COR3_REQUEST_STASH' }, '*');
+                            setTimeout(() => {
+                                if (autoSendExpeditionId) {
+                                    console.log('[COR3 Helper] Auto-sell done, retrying collect all in 10s...');
+                                    setTimeout(() => {
+                                        window.postMessage({ type: 'COR3_COLLECT_ALL', expeditionId: autoSendExpeditionId }, '*');
+                                    }, 10000 + Math.floor(Math.random() * 500));
+                                }
+                            }, 3000);
+                        });
+                    } else {
+                        disableAutoSendDueToStashFull();
                     }
                 });
+            } else {
+                disableAutoSendDueToStashFull();
             }
         });
-        // Notify user
-        window.postMessage({
-            type: 'COR3_STASH_FULL_WARNING',
-            message: 'Stash is full. Clear stash before claiming more items. Auto-send mercenary disabled.'
-        }, '*');
-        autoSendInProgress = false;
-        autoSendExpeditionId = null;
     }
     // Handle insufficient credits error from expedition launch
     if (event.data && event.data.type === 'COR3_WS_INSUFFICIENT_CREDITS') {
@@ -409,9 +485,9 @@ window.addEventListener('message', (event) => {
                 }
                 const loc = config.locations[0];
                 const zone = loc.zones && loc.zones[0] ? loc.zones[0] : null;
-                const objective = zone && zone.objectives && zone.objectives[0] ? zone.objectives[0] : null;
-                if (!zone || !objective) {
-                    console.log('[COR3 Helper] Auto-send: missing zone/objective config, aborting');
+                const goal = zone && zone.goals && zone.goals[0] ? zone.goals[0] : null;
+                if (!zone || !goal) {
+                    console.log('[COR3 Helper] Auto-send: missing zone/goal config, aborting');
                     autoSendInProgress = false;
                     return;
                 }
@@ -420,7 +496,7 @@ window.addEventListener('message', (event) => {
                     marketId: '019d3ea4-85bd-7389-904d-8f7c85841134',
                     locationConfigId: loc.id,
                     zoneConfigId: zone.id,
-                    objectiveId: objective.id,
+                    goalId: goal.id,
                     hasInsurance: false
                 };
                 console.log('[COR3 Helper] Auto-send: launching expedition with mercenary:', selectedMerc.callsign);
@@ -524,6 +600,43 @@ function fetchDailyRewards(token) {
     .catch(() => {});
 }
 
+// --- Auto-Choose Decisions (content-side, works even when popup is closed) ---
+const contentAutoChosenDecisions = new Set();
+function checkAutoChooseFromContent(decisions) {
+    if (!decisions || decisions.length === 0) return;
+    chrome.storage.sync.get('decisionModifiers', (result) => {
+        const mods = result.decisionModifiers;
+        if (!mods || !mods.autoChoose) return;
+        const noWait = !!mods.noWaitAutoChoose;
+        const lootMod = mods.enabled !== false ? (mods.loot ?? 3) : 1;
+        const riskMod = mods.enabled !== false ? (mods.risk ?? -2) : -1;
+        for (const d of decisions) {
+            if (d.isResolved || !d.decisionDeadline || !Array.isArray(d.decisionOptions)) continue;
+            if (contentAutoChosenDecisions.has(d.messageId)) continue;
+            const dl = new Date(d.decisionDeadline);
+            const remaining = dl - Date.now();
+            if (remaining <= 0) continue;
+            if (!noWait && remaining > 60000) continue;
+            let bestOpt = null;
+            let bestScore = -Infinity;
+            for (const opt of d.decisionOptions) {
+                const score = Math.round((opt.lootModifier * lootMod) + ((opt.riskModifier * riskMod) * (((d.riskScore + Math.abs(opt.riskModifier)) / 10) || 1)));
+                if (score > bestScore) { bestScore = score; bestOpt = opt; }
+            }
+            if (bestOpt) {
+                contentAutoChosenDecisions.add(d.messageId);
+                console.log('[COR3 Helper] Auto-choose (content): picking "' + bestOpt.label + '" (score: ' + bestScore + ')');
+                window.postMessage({
+                    type: 'COR3_RESPOND_DECISION',
+                    expeditionId: d.expeditionId,
+                    messageId: d.messageId,
+                    selectedOption: bestOpt.id
+                }, '*');
+            }
+        }
+    });
+}
+
 // --- Auto-Send Mercenary State ---
 let autoSendInProgress = false;
 let autoSendExpeditionId = null;
@@ -557,17 +670,17 @@ function checkAutoSendOnExpeditionData(expeditions) {
                 autoSendInProgress = true;
                 autoSendExpeditionId = exp.id;
                 if (!exp.containerOpenedAt) {
-                    // Container not opened yet — Step 1: open container
-                    console.log('[COR3 Helper] Auto-send: Detected COMPLETED expedition:', exp.id, '- opening container');
+                    // Container not opened yet — Step 1: open container (10s delay for UI visibility)
+                    console.log('[COR3 Helper] Auto-send: Detected COMPLETED expedition:', exp.id, '- opening container in 10s');
                     setTimeout(() => {
                         window.postMessage({ type: 'COR3_OPEN_CONTAINER', expeditionId: exp.id }, '*');
-                    }, 1000 + Math.floor(Math.random() * 500));
+                    }, 10000 + Math.floor(Math.random() * 500));
                 } else {
-                    // Container already opened but not collected — Step 2: collect all
-                    console.log('[COR3 Helper] Auto-send: Detected COMPLETED expedition:', exp.id, '- container already open, collecting');
+                    // Container already opened but not collected — Step 2: collect all (10s delay for UI visibility)
+                    console.log('[COR3 Helper] Auto-send: Detected COMPLETED expedition:', exp.id, '- container already open, collecting in 10s');
                     setTimeout(() => {
                         window.postMessage({ type: 'COR3_COLLECT_ALL', expeditionId: exp.id }, '*');
-                    }, 1000 + Math.floor(Math.random() * 500));
+                    }, 10000 + Math.floor(Math.random() * 500));
                 }
                 return; // process one at a time
             }
@@ -977,6 +1090,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "requestStash") {
         window.postMessage({ type: 'COR3_REQUEST_STASH' }, '*');
         sendResponse({ success: true });
+    } else if (request.action === "requestLoadout") {
+        window.postMessage({ type: 'COR3_REQUEST_LOADOUT' }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "equipHardware") {
+        window.postMessage({ type: 'COR3_EQUIP_HARDWARE', moduleConfigId: request.moduleConfigId }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "equipSoftware") {
+        window.postMessage({ type: 'COR3_EQUIP_SOFTWARE', moduleConfigId: request.moduleConfigId }, '*');
+        sendResponse({ success: true });
+    } else if (request.action === "unequipSoftware") {
+        window.postMessage({ type: 'COR3_UNEQUIP_SOFTWARE', moduleConfigId: request.moduleConfigId }, '*');
+        sendResponse({ success: true });
     } else if (request.action === "requestMarket") {
         window.postMessage({ type: 'COR3_REQUEST_MARKET' }, '*');
         sendResponse({ success: true });
@@ -1151,6 +1276,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         removeNotificationsLeft();
         console.log('[COR3 Helper] Notifications moved back to right');
         sendResponse({ success: true });
+    } else if (request.action === "enableResizableNetworkMap") {
+        chrome.storage.sync.set({ resizableNetworkMap: true });
+        applyResizableNetworkMap();
+        console.log('[COR3 Helper] Network map made resizable');
+        sendResponse({ success: true });
+    } else if (request.action === "disableResizableNetworkMap") {
+        chrome.storage.sync.set({ resizableNetworkMap: false });
+        removeResizableNetworkMap();
+        console.log('[COR3 Helper] Network map resize disabled');
+        sendResponse({ success: true });
     } else if (request.action === "getVersionFallbacks") {
         // Return version fallbacks from global variables
         sendResponse({
@@ -1162,7 +1297,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         _autoJobsActive = true;
         injectAutoJobSolver();
         setTimeout(() => {
-            window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: request.jobs }, '*');
+            window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: request.jobs, settings: request.settings || {} }, '*');
         }, 500);
         sendResponse({ success: true });
     } else if (request.action === "stopAutoJobs") {
@@ -1358,6 +1493,38 @@ chrome.storage.sync.get('moveNotificationsLeft', (result) => {
     }
 });
 
+// --- Resizable Network Map ---
+const COR3_RESIZE_MAP_STYLE_ID = 'cor3-resizable-network-map-style';
+function applyResizableNetworkMap() {
+    if (document.getElementById(COR3_RESIZE_MAP_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = COR3_RESIZE_MAP_STYLE_ID;
+    style.textContent = `
+        [data-component-name="Application-NETWORK_MAP"] {
+            resize: both !important;
+            overflow: auto !important;
+        }
+        [data-component-name="Application-NETWORK_MAP"] [data-component-name="ApplicationWindow"] {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+}
+
+function removeResizableNetworkMap() {
+    const el = document.getElementById(COR3_RESIZE_MAP_STYLE_ID);
+    if (el) el.remove();
+}
+
+chrome.storage.sync.get('resizableNetworkMap', (result) => {
+    if (result.resizableNetworkMap) {
+        setTimeout(() => {
+            applyResizableNetworkMap();
+        }, 1000);
+    }
+});
+
 // --- Auto Job Solver Engine Injection ---
 let autoJobSolverInjected = false;
 
@@ -1528,7 +1695,7 @@ chrome.storage.local.get(['autoJobsRunning', 'autoJobsQueue'], (data) => {
         // Refresh market data first so canComplete flags are up-to-date
         window.postMessage({ type: 'COR3_REFRESH_ALL_MARKETS' }, '*');
         setTimeout(() => {
-            window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: data.autoJobsQueue }, '*');
+            window.postMessage({ type: 'COR3_AUTOJOB_START', jobs: data.autoJobsQueue, settings: {} }, '*');
         }, 8000); // longer delay on page reload to allow market refresh
     }
 });

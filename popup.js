@@ -7,9 +7,10 @@ const themeOptions = themeDropdown.querySelectorAll('.theme-option');
 
 function applyTheme(themeName) {
     document.body.className = '';
-    if (themeName && themeName !== 'default') {
+    if (themeName) {
         document.body.classList.add('theme-' + themeName);
     }
+
     themeOptions.forEach(opt => {
         opt.classList.toggle('active', opt.dataset.theme === themeName);
     });
@@ -41,6 +42,284 @@ document.addEventListener('click', () => {
 });
 
 const statusDiv = document.getElementById('status');
+
+// --- Helper-Only Mode ---
+var isHelper = false;
+
+chrome.storage.sync.get('helperMode', (result) => {
+    isHelper = result.helperMode;
+});
+
+let oldValues = {};
+const helperModeToggle = document.getElementById('helperModeToggle');
+async function applyHelperMode(isHelper, mode) {
+    if (isHelper) {console.log("Enabling helper mode!!");}
+    else {console.log("Disabling helper mode!!");}
+
+    const automationKeys = [
+        'autoRefresh', 'autoJobSolverEnabled', 'autoFinishAllJobsEnabled', 'autoClearIps',
+        'autoJobsDebugConsoleEnabled', 'autoUpdateMarkets', 'decisionModifiers', 'autoSendMerc',
+        'autoSellCheapest'
+    ];
+
+    if (mode === 'update') {
+        let disabledValue = '';
+        let value = '';
+        if (isHelper) {
+            oldValues = await chrome.storage.sync.get(automationKeys);
+            chrome.storage.sync.set({ oldValues: oldValues });
+        } else {
+            oldValues = await chrome.storage.sync.get('oldValues');
+        }
+        console.log(JSON.stringify(oldValues));
+        automationKeys.forEach(key => {
+            if (key === 'autoRefresh') {
+                disabledValue = {"dark_jobs":false,"home_jobs":false,"soyuz_jobs":false,"usol_jobs":false};
+                value = isHelper ? disabledValue : (oldValues[key] ?? disabledValue);
+                chrome.storage.sync.set({ [key]: value });
+            } else if (key === 'autoSendMerc') {
+                disabledValue = {"autoChooseMerc":false,"disabledReason":null,"enabled":false,"mercenaryId":"","mercenaryName":""};
+                value = isHelper ? disabledValue : (oldValues[key] ?? disabledValue);
+                chrome.storage.sync.set({ [key]: value });
+            } else if (key === 'decisionModifiers') {
+                let loot = oldValues[key] ? (oldValues[key]).loot : 3;
+                let risk = oldValues[key] ? (oldValues[key]).risk : -2;
+                disabledValue = {"autoChoose":false,"enabled":false,"loot":loot,"noWaitAutoChoose":false,"risk":risk};
+                value = isHelper ? disabledValue : (oldValues[key] ?? disabledValue);
+                chrome.storage.sync.set({ [key]: value });
+            } else {
+                value = isHelper ? false : (oldValues[key] ?? false);
+                chrome.storage.sync.set({ [key]: value });
+            }
+        });
+
+        reRenderDecisions();
+        loadMercenaries();
+
+        let toggles = {};
+        try {
+            toggles = await chrome.storage.sync.get(['autoRefresh', 'autoJobSolverEnabled', 'autoUpdateMarkets', 'autoFinishAllJobsEnabled', 'autoClearIps', 'autoJobsDebugConsoleEnabled', 'decisionModifiers', 'autoSendMerc', 'autoSellCheapest']);
+        } catch (err) {
+            console.log("Couldn't find the related item on storage -> " + err);
+        }
+
+        // --- Update Toggles ---
+
+        // Pinned Auto Refresh Timers
+
+        (document.getElementById('autoRefreshCore')).checked = !!toggles.autoRefresh.home_jobs ?? false;
+        (document.getElementById('autoRefreshDark')).checked = !!toggles.autoRefresh.dark_jobs ?? false;
+        (document.getElementById('autoRefreshSoyuz')).checked = !!toggles.autoRefresh.soyuz_jobs ?? false;
+        (document.getElementById('autoRefreshUsol')).checked = !!toggles.autoRefresh.usol_jobs ?? false;
+
+        loadPinnedState()
+
+        // Auto Jobs and Auto Update Markets
+
+        (document.getElementById('autoJobSolverToggle')).checked = !!toggles.autoJobSolverEnabled ?? false;
+        (document.getElementById('autoJobSolverStatus')).textContent = !!toggles.autoJobSolverEnabled ? 'Active' : 'Off';
+        (document.getElementById('autoJobSolverStatus')).style.color = !!toggles.autoJobSolverEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
+        (document.getElementById('autoUpdateMarketsToggle')).checked = !!toggles.autoUpdateMarkets ?? false;
+        (document.getElementById('autoUpdateMarketsStatus')).textContent = !!toggles.autoUpdateMarkets ? 'Active' : 'Off';
+        (document.getElementById('autoUpdateMarketsStatus')).style.color = !!toggles.autoUpdateMarkets ? 'var(--accent-green)' : 'var(--text-dim)';
+
+        (document.getElementById('autoJobSolverSection')).style.display = !!toggles.autoJobSolverEnabled ? '' : 'none';
+
+        (document.getElementById('autoFinishAllJobsToggle')).checked = !!toggles.autoFinishAllJobsEnabled ?? false;
+        (document.getElementById('autoClearIpsToggle')).checked = !!toggles.autoClearIps ?? false;
+        (document.getElementById('autoJobsDebugToggle')).checked =  !!toggles.autoJobsDebugConsoleEnabled ?? false;
+        (document.getElementById('autoJobsDebugConsole')).style.display = !!toggles.autoJobsDebugConsoleEnabled ? '' : 'none';
+        if (!!toggles.autoJobsDebugConsoleEnabled) {
+            renderDebugJobs();
+            renderDebugLogs();
+        }
+
+        updateAutoUpdateMarketsStatus();
+
+        // Auto Decisions and Auto Mercs
+
+        (document.getElementById('autoChooseCheckbox')).checked = !!toggles.decisionModifiers.autoChoose ?? false;
+        (document.getElementById('noWaitAutoChooseCheckbox')).checked = !!toggles.decisionModifiers.noWaitAutoChoose ?? false;
+
+        (document.getElementById('autoSendMercenaryToggle')).checked = !!toggles.autoSendMerc.enabled ?? false;
+        (document.getElementById('autoChooseMercToggle')).checked = !!toggles.autoSendMerc.autoChooseMerc ?? false;
+        (document.getElementById('autoSellCheapestToggle')).checked = !!toggles.autoSellCheapest ?? false;
+
+    }
+
+    // --- Update Toggle Rows, Checkbox and Container sections ---
+
+    // Pinned Auto Refresh Timers
+
+    (document.querySelectorAll('.pinned-auto-refresh')).forEach(element => {
+        element.style.display = isHelper ? 'none' : 'flex';
+    });
+
+    // Auto Jobs and Auto Update Markets
+
+    ['autoJobSolverToggle', 'autoUpdateMarketsToggle'].forEach(key => {
+        ((document.getElementById(key)).closest('.auto-decrypt-row')).style.display = isHelper ? 'none' : 'flex';
+    });
+
+    // Auto Decisions and Auto Mercs
+
+    ['noWaitAutoChooseCheckbox', 'autoChooseCheckbox', 'autoSellCheapestToggle', 'autoChooseMercToggle', 'autoSendMercenaryToggle'].forEach(key => {
+        ((document.getElementById(key)).closest('.auto-choose-row')).style.display = isHelper ? 'none' : 'flex';
+    });
+
+    (document.getElementById('mercenariesContainer')).querySelectorAll('.merc-card').forEach(c => c.classList.remove('selected'));
+
+}
+if (helperModeToggle) {
+    chrome.storage.sync.get('helperMode', (result) => {
+        helperModeToggle.checked = result.helperMode || false;
+        applyHelperMode(helperModeToggle.checked, 'render');
+    });
+    helperModeToggle.addEventListener('change', () => {
+        isHelper = helperModeToggle.checked;
+        chrome.storage.sync.set({ helperMode: isHelper });
+        applyHelperMode(isHelper, 'update');
+    });
+}
+
+// --- Helper-Only Mode ---
+var isHelper = false;
+
+chrome.storage.sync.get('helperMode', (result) => {
+    isHelper = result.helperMode;
+});
+
+let oldValues = {};
+const helperModeToggle = document.getElementById('helperModeToggle');
+async function applyHelperMode(isHelper, mode) {
+    if (isHelper) {console.log("Enabling helper mode!!");}
+    else {console.log("Disabling helper mode!!");}
+
+    const automationKeys = [
+        'autoRefresh', 'autoJobSolverEnabled', 'autoFinishAllJobsEnabled', 'autoClearIps',
+        'autoJobsDebugConsoleEnabled', 'autoUpdateMarkets', 'decisionModifiers', 'autoSendMerc',
+        'autoSellCheapest'
+    ];
+
+    if (mode === 'update') {
+        let disabledValue = '';
+        let value = '';
+        if (isHelper) {
+            oldValues = await chrome.storage.sync.get(automationKeys);
+            chrome.storage.sync.set({ oldValues: oldValues });
+        } else {
+            oldValues = await chrome.storage.sync.get('oldValues');
+        }
+        console.log(JSON.stringify(oldValues));
+        automationKeys.forEach(key => {
+            if (key === 'autoRefresh') {
+                disabledValue = {"dark_jobs":false,"home_jobs":false,"soyuz_jobs":false,"usol_jobs":false};
+                value = isHelper ? disabledValue : (oldValues[key] ?? disabledValue);
+                chrome.storage.sync.set({ [key]: value });
+            } else if (key === 'autoSendMerc') {
+                disabledValue = {"autoChooseMerc":false,"disabledReason":null,"enabled":false,"mercenaryId":"","mercenaryName":""};
+                value = isHelper ? disabledValue : (oldValues[key] ?? disabledValue);
+                chrome.storage.sync.set({ [key]: value });
+            } else if (key === 'decisionModifiers') {
+                let loot = oldValues[key] ? (oldValues[key]).loot : 3;
+                let risk = oldValues[key] ? (oldValues[key]).risk : -2;
+                disabledValue = {"autoChoose":false,"enabled":false,"loot":loot,"noWaitAutoChoose":false,"risk":risk};
+                value = isHelper ? disabledValue : (oldValues[key] ?? disabledValue);
+                chrome.storage.sync.set({ [key]: value });
+            } else {
+                value = isHelper ? false : (oldValues[key] ?? false);
+                chrome.storage.sync.set({ [key]: value });
+            }
+        });
+
+        reRenderDecisions();
+        loadMercenaries();
+
+        let toggles = {};
+        try {
+            toggles = await chrome.storage.sync.get(['autoRefresh', 'autoJobSolverEnabled', 'autoUpdateMarkets', 'autoFinishAllJobsEnabled', 'autoClearIps', 'autoJobsDebugConsoleEnabled', 'decisionModifiers', 'autoSendMerc', 'autoSellCheapest']);
+        } catch (err) {
+            console.log("Couldn't find the related item on storage -> " + err);
+        }
+
+        // --- Update Toggles ---
+
+        // Pinned Auto Refresh Timers
+
+        (document.getElementById('autoRefreshCore')).checked = !!toggles.autoRefresh.home_jobs ?? false;
+        (document.getElementById('autoRefreshDark')).checked = !!toggles.autoRefresh.dark_jobs ?? false;
+        (document.getElementById('autoRefreshSoyuz')).checked = !!toggles.autoRefresh.soyuz_jobs ?? false;
+        (document.getElementById('autoRefreshUsol')).checked = !!toggles.autoRefresh.usol_jobs ?? false;
+
+        loadPinnedState()
+
+        // Auto Jobs and Auto Update Markets
+
+        (document.getElementById('autoJobSolverToggle')).checked = !!toggles.autoJobSolverEnabled ?? false;
+        (document.getElementById('autoJobSolverStatus')).textContent = !!toggles.autoJobSolverEnabled ? 'Active' : 'Off';
+        (document.getElementById('autoJobSolverStatus')).style.color = !!toggles.autoJobSolverEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
+        (document.getElementById('autoUpdateMarketsToggle')).checked = !!toggles.autoUpdateMarkets ?? false;
+        (document.getElementById('autoUpdateMarketsStatus')).textContent = !!toggles.autoUpdateMarkets ? 'Active' : 'Off';
+        (document.getElementById('autoUpdateMarketsStatus')).style.color = !!toggles.autoUpdateMarkets ? 'var(--accent-green)' : 'var(--text-dim)';
+
+        (document.getElementById('autoJobSolverSection')).style.display = !!toggles.autoJobSolverEnabled ? '' : 'none';
+
+        (document.getElementById('autoFinishAllJobsToggle')).checked = !!toggles.autoFinishAllJobsEnabled ?? false;
+        (document.getElementById('autoClearIpsToggle')).checked = !!toggles.autoClearIps ?? false;
+        (document.getElementById('autoJobsDebugToggle')).checked =  !!toggles.autoJobsDebugConsoleEnabled ?? false;
+        (document.getElementById('autoJobsDebugConsole')).style.display = !!toggles.autoJobsDebugConsoleEnabled ? '' : 'none';
+        if (!!toggles.autoJobsDebugConsoleEnabled) {
+            renderDebugJobs();
+            renderDebugLogs();
+        }
+
+        updateAutoUpdateMarketsStatus();
+
+        // Auto Decisions and Auto Mercs
+
+        (document.getElementById('autoChooseCheckbox')).checked = !!toggles.decisionModifiers.autoChoose ?? false;
+        (document.getElementById('noWaitAutoChooseCheckbox')).checked = !!toggles.decisionModifiers.noWaitAutoChoose ?? false;
+
+        (document.getElementById('autoSendMercenaryToggle')).checked = !!toggles.autoSendMerc.enabled ?? false;
+        (document.getElementById('autoChooseMercToggle')).checked = !!toggles.autoSendMerc.autoChooseMerc ?? false;
+        (document.getElementById('autoSellCheapestToggle')).checked = !!toggles.autoSellCheapest ?? false;
+
+    }
+
+    // --- Update Toggle Rows, Checkbox and Container sections ---
+
+    // Pinned Auto Refresh Timers
+
+    (document.querySelectorAll('.pinned-auto-refresh')).forEach(element => {
+        element.style.display = isHelper ? 'none' : 'flex';
+    });
+
+    // Auto Jobs and Auto Update Markets
+
+    ['autoJobSolverToggle', 'autoUpdateMarketsToggle'].forEach(key => {
+        ((document.getElementById(key)).closest('.auto-decrypt-row')).style.display = isHelper ? 'none' : 'flex';
+    });
+
+    // Auto Decisions and Auto Mercs
+
+    ['noWaitAutoChooseCheckbox', 'autoChooseCheckbox', 'autoSellCheapestToggle', 'autoChooseMercToggle', 'autoSendMercenaryToggle'].forEach(key => {
+        ((document.getElementById(key)).closest('.auto-choose-row')).style.display = isHelper ? 'none' : 'flex';
+    });
+
+    (document.getElementById('mercenariesContainer')).querySelectorAll('.merc-card').forEach(c => c.classList.remove('selected'));
+
+}
+if (helperModeToggle) {
+    chrome.storage.sync.get('helperMode', (result) => {
+        helperModeToggle.checked = result.helperMode || false;
+        applyHelperMode(helperModeToggle.checked, 'render');
+    });
+    helperModeToggle.addEventListener('change', () => {
+        isHelper = helperModeToggle.checked;
+        chrome.storage.sync.set({ helperMode: isHelper });
+        applyHelperMode(isHelper, 'update');
+    });
+}
 
 // --- Pop Out ---
 const popOutBtn = document.getElementById('popOutBtn');
@@ -300,9 +579,11 @@ const soyuzMarketLastUpdated = document.getElementById('soyuzMarketLastUpdated')
 const usolMarketLastUpdated = document.getElementById('usolMarketLastUpdated');
 const expeditionLastUpdated = document.getElementById('expeditionLastUpdated');
 const decisionLastUpdated = document.getElementById('decisionLastUpdated');
+const personalDroneLastUpdated = document.getElementById('personalDroneLastUpdated');
 const inventoryLastUpdated = document.getElementById('inventoryLastUpdated');
 const archivedExpLastUpdated = document.getElementById('archivedExpLastUpdated');
 const mercenariesLastUpdated = document.getElementById('mercenariesLastUpdated');
+const loadoutLastUpdated = document.getElementById('loadoutLastUpdated');
 
 function formatTimeAgo(ts) {
     if (!ts) return '';
@@ -331,9 +612,11 @@ function refreshAllTimestamps() {
     showLastUpdated(usolMarketLastUpdated, 'usolMarketDataUpdatedAt');
     showLastUpdated(expeditionLastUpdated, 'expeditionsDataUpdatedAt');
     showLastUpdated(decisionLastUpdated, 'expeditionsDataUpdatedAt');
+    showLastUpdated(personalDroneLastUpdated, 'expeditionsDataUpdatedAt');
     if (inventoryLastUpdated) showLastUpdated(inventoryLastUpdated, 'stashDataUpdatedAt');
     if (archivedExpLastUpdated) showLastUpdated(archivedExpLastUpdated, 'archivedExpeditionsUpdatedAt');
     if (mercenariesLastUpdated) showLastUpdated(mercenariesLastUpdated, 'mercenariesUpdatedAt');
+    if (loadoutLastUpdated) showLastUpdated(loadoutLastUpdated, 'loadoutUpdatedAt');
 }
 
 // --- Expedition Info + Decisions (inline) ---
@@ -421,16 +704,55 @@ function renderExpeditionInfo(expeditions) {
             `;
         }
 
+        // Determine expedition UI state: container ready, items revealed, or normal
+        const payAndOpenMsg = exp.messages && exp.messages.find(m => m.actionType === 'pay_and_open');
+        const hasContainerData = exp.containerData && Array.isArray(exp.containerData) && exp.containerData.length > 0;
+
+        let bodyHtml = '';
+        if (hasContainerData) {
+            // State 3: Container opened — show items
+            bodyHtml = `<div class="detail-row" style="color:var(--accent-green);font-weight:bold;">Items Found:</div>`;
+            for (const item of exp.containerData) {
+                const tierColor = item.tier === 'RARE' ? 'var(--accent-blue)' : item.tier === 'EPIC' ? 'var(--accent-purple,#a855f7)' : item.tier === 'LEGENDARY' ? 'var(--accent-orange)' : 'var(--text-dim)';
+                bodyHtml += `
+                    <div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
+                        <img src="${item.imageUrl}" style="width:32px;height:32px;border-radius:4px;background:rgba(255,255,255,0.05);" onerror="this.style.display='none'">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:11px;font-weight:bold;color:var(--text-primary);">${item.name} x${item.quantity}</div>
+                            <div style="font-size:9px;color:${tierColor};">${item.tier}</div>
+                        </div>
+                    </div>
+                `;
+            }
+        } else if (payAndOpenMsg && exp.status === 'COMPLETED' && !exp.containerOpenedAt) {
+            // State 2: Container ready to open — show cost/itemCount/image
+            const ad = payAndOpenMsg.actionData || {};
+            bodyHtml = `
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="flex:1;">
+                        <div class="detail-row"><span class="label">Open Cost:</span> 💰 ${(ad.cost || 0).toLocaleString()}</div>
+                        <div class="detail-row"><span class="label">Items Inside:</span> 📦 ${ad.itemCount || '?'}</div>
+                    </div>
+                    ${ad.containerImageUrl ? `<img src="${ad.containerImageUrl}" style="width:48px;height:48px;border-radius:6px;background:rgba(255,255,255,0.05);" onerror="this.style.display='none'">` : ''}
+                </div>
+            `;
+        } else {
+            // State 1: Normal running/event state
+            bodyHtml = `
+                <div class="detail-row"><span class="label">Mercenary:</span> 🧑 ${mercName}</div>
+                <div class="detail-row"><span class="label">Total Cost:</span> 💰 ${exp.totalCost ? exp.totalCost.toLocaleString() : '--'}</div>
+                <div class="detail-row"><span class="label">Insurance:</span> ${insurance}</div>
+                <div class="detail-row"><span class="label">Risk Score:</span> ${exp.riskScore ?? '--'}</div>
+                ${timerHtml}
+            `;
+        }
+
         card.innerHTML = `
             <div class="exp-header">
                 <span class="exp-title">📍 ${exp.locationName || 'Unknown'} — ${exp.zoneName || 'Unknown'}</span>
                 <span class="exp-status${statusClass}">${exp.status || 'UNKNOWN'}</span>
             </div>
-            <div class="detail-row"><span class="label">Mercenary:</span> 🧑 ${mercName}</div>
-            <div class="detail-row"><span class="label">Total Cost:</span> 💰 ${exp.totalCost ? exp.totalCost.toLocaleString() : '--'}</div>
-            <div class="detail-row"><span class="label">Insurance:</span> ${insurance}</div>
-            <div class="detail-row"><span class="label">Risk Score:</span> ${exp.riskScore ?? '--'}</div>
-            ${timerHtml}
+            ${bodyHtml}
         `;
         expeditionInfoContainer.appendChild(card);
     }
@@ -653,8 +975,6 @@ async function checkAutoChoose(decisions) {
                         selectedOption: bestOpt.id
                     });
                     console.log(`[COR3 Helper] Auto-chose "${bestOpt.label}" (score: ${bestScore})`);
-                    // Confirm by refreshing expedition data after a delay
-                    setTimeout(() => requestExpeditions(), 3000);
                 }
             } catch (e) { /* silent */ }
         }
@@ -839,6 +1159,17 @@ async function requestExpeditions() {
 
 refreshExpeditionsBtn.addEventListener('click', () => requestExpeditions());
 
+// --- Personal Drone Assembling (inline expandable) ---
+const personalDroneSectionToggle = document.getElementById('personalDroneSectionToggle');
+const personalDroneSectionBody = document.getElementById('personalDroneSectionBody');
+const personalDroneContainer = document.getElementById('personalDroneContainer');
+
+personalDroneSectionToggle.addEventListener('click', async () => {
+    personalDroneSectionToggle.classList.toggle('open');
+    personalDroneSectionBody.classList.toggle('open');
+    personalDroneContainer.innerHTML = '<div><div class="no-decisions">Soon™</div></div>';
+});
+
 // --- Inventory (inline expandable) ---
 const inventoryContainer = document.getElementById('inventoryContainer');
 const inventorySectionToggle = document.getElementById('inventorySectionToggle');
@@ -910,6 +1241,7 @@ function renderInventory(data) {
         return pb - pa;
     });
 
+    var invItemMap = [];
     for (const item of sortedItems) {
         const card = document.createElement('div');
         const tierClass = 'tier-' + (item.tier || 'common').toLowerCase();
@@ -933,10 +1265,26 @@ function renderInventory(data) {
             ? `<img src="${imgSrc}" alt="${item.name}" loading="lazy">`
             : '';
 
+        const invIdx = invItemMap.length;
+        invItemMap.push(item);
+
         card.innerHTML = `
             ${imgHtml}
             <div class="item-details">
-                <div class="item-name">${item.name}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="item-name">${item.name}</div>
+                    <button class="market-item-info-btn inv-info-btn" data-inv-idx="${invIdx}" style="width: 10%;padding-left: 4px;">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <g clip-path="url(#mi2)">
+                                <path d="M3.759 1.2H12.243c.703 0 1.3.246 1.81.75.502.503.748 1.095.748 1.797v8.495c0 .71-.246 1.305-.748 1.807-.51.505-1.107.751-1.81.751H3.76c-.71 0-1.306-.246-1.809-.749-.502-.502-.749-1.097-.749-1.808V3.747c0-.703.246-1.295.75-1.798.502-.503 1.098-.75 1.808-.75z" stroke="currentColor" stroke-width="0.8"></path>
+                                <path d="M6.994 3.837h2.002v1.992H6.994V3.837zM6.994 7.124h2.002v5.049H6.994V7.124z" fill="currentColor"></path>
+                            </g>
+                            <defs>
+                                <clipPath id="mi2"><rect width="16" height="16" fill="currentColor"></rect></clipPath>
+                            </defs>
+                        </svg>
+                    </button>
+                </div>
                 <div class="item-badges">${badgesHtml}</div>
                 ${priceHtml}
             </div>
@@ -982,6 +1330,53 @@ function renderInventory(data) {
             }
         });
     });
+
+    // Wire up inventory info buttons
+    inventoryContainer.querySelectorAll('.inv-info-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.invIdx, 10);
+            if (!isNaN(idx) && invItemMap[idx]) showInventoryInfoPopup(invItemMap[idx]);
+        });
+    });
+}
+
+function showInventoryInfoPopup(item) {
+    const popup = document.getElementById('inventoryInfoPopup');
+    const overlay = document.getElementById('inventoryInfoOverlay');
+    if (!popup || !overlay) return;
+
+    const INFO_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:currentColor"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M12 17V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="8" r="0.75" fill="currentColor"/></svg>';
+
+    let h = '<div class="info-title">' + INFO_SVG + ' ' + (item.name || 'Unknown').toUpperCase() + '</div>';
+    h += '<div class="info-desc">';
+    if (item.imageUrl) h += '<img src="' + item.imageUrl + '" alt="">';
+    h += '<span>' + (item.description || 'No description available.') + '</span>';
+    h += '</div>';
+
+    // Tags
+    const tags = item.tags || [];
+    if (tags.length > 0) {
+        h += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;border-top:1px solid rgba(96,108,124,0.5);padding-top:8px;">';
+        for (const tag of tags) {
+            h += '<span style="font-size:9px;padding:2px 8px;border-radius:10px;background:rgba(118,193,209,0.15);color:rgba(118,193,209,1);border:1px solid rgba(118,193,209,0.3);">' + tag + '</span>';
+        }
+        h += '</div>';
+    }
+
+    // Extra details grid
+    h += '<div class="info-specs">';
+    if (item.tier) h += '<div class="info-spec-item"><div class="info-spec-label">Rarity</div><div class="info-spec-val">' + item.tier + '</div></div>';
+    if (item.sellPrice) h += '<div class="info-spec-item"><div class="info-spec-label">Sell Price</div><div class="info-spec-val">' + item.sellPrice.toLocaleString() + '</div></div>';
+    if (item.canCraft) h += '<div class="info-spec-item"><div class="info-spec-label">Craftable</div><div class="info-spec-val">Yes</div></div>';
+    if (item.canUse) h += '<div class="info-spec-item"><div class="info-spec-label">Usable</div><div class="info-spec-val">Yes</div></div>';
+    h += '</div>';
+
+    popup.innerHTML = h;
+    popup.classList.add('open');
+    overlay.classList.add('open');
+    const close = () => { popup.classList.remove('open'); overlay.classList.remove('open'); overlay.removeEventListener('click', close); };
+    overlay.addEventListener('click', close);
 }
 
 // --- Daily Ops Timer ---
@@ -1172,7 +1567,82 @@ function updateMarketLabel(labelEl, wsName, placeholder, icon) {
     }
 }
 
+function showMarketInfoPopup(lot) {
+    const popup = document.getElementById('marketInfoPopup');
+    const overlay = document.getElementById('marketInfoOverlay');
+    if (!popup || !overlay) return;
+    const det = lot.details || {};
+    const isAccess = (lot.category || '').toUpperCase() === 'ACCESS';
+    const INFO_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:currentColor"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M12 17V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="8" r="0.75" fill="currentColor"/></svg>';
+
+    let itemName;
+    if (isAccess) {
+        itemName = (det.serverName || '') + ' ' + (det.accessType || '') + ' access';
+    } else {
+        itemName = det.name || 'Unknown';
+    }
+
+    let h = '<div class="info-title">' + INFO_SVG + ' ' + itemName.toUpperCase() + '</div>';
+    h += '<div class="info-desc">';
+    if (det.image) h += '<img src="' + det.image + '" alt="">';
+    h += '<span>' + (det.description || 'No description available.') + '</span>';
+    h += '</div>';
+    h += '<div class="info-specs">';
+    h += '<div class="info-spec-item"><div class="info-spec-label">Price</div><div class="info-spec-val">' + (lot.price ? lot.price.toLocaleString() : '--') + '</div></div>';
+    if (lot.priceModifier) h += '<div class="info-spec-item"><div class="info-spec-label">Price Modifier</div><div class="info-spec-val">' + (lot.priceModifier > 0 ? '+' : '') + lot.priceModifier + '</div></div>';
+
+    if (isAccess) {
+        if (lot.accessLevel) h += '<div class="info-spec-item"><div class="info-spec-label">Access Level</div><div class="info-spec-val">' + lot.accessLevel + '</div></div>';
+        if (det.durationHours !== undefined) h += '<div class="info-spec-item"><div class="info-spec-label">Duration</div><div class="info-spec-val">' + det.durationHours + 'h</div></div>';
+        if (det.accessType) h += '<div class="info-spec-item"><div class="info-spec-label">Access Type</div><div class="info-spec-val">' + det.accessType + '</div></div>';
+        if (det.serverName) h += '<div class="info-spec-item"><div class="info-spec-label">Server</div><div class="info-spec-val">' + det.serverName + '</div></div>';
+        h += '<div class="info-spec-item"><div class="info-spec-label">Available</div><div class="info-spec-val">' + (lot.availableCount !== undefined ? lot.availableCount : '--') + '</div></div>';
+        if (lot.lockedByQuest) h += '<div class="info-spec-item"><div class="info-spec-label">Locked By Quest</div><div class="info-spec-val">' + lot.lockedByQuest + '</div></div>';
+        if (lot.unavailableReason) h += '<div class="info-spec-item"><div class="info-spec-label">Status</div><div class="info-spec-val">' + lot.unavailableReason + '</div></div>';
+    } else {
+        if (det.manufacturer) h += '<div class="info-spec-item"><div class="info-spec-label">Manufacturer</div><div class="info-spec-val">' + det.manufacturer + '</div></div>';
+        if (det.tier) h += '<div class="info-spec-item"><div class="info-spec-label">Tier</div><div class="info-spec-val">' + det.tier + '</div></div>';
+        if (det.itemVulnerability !== undefined) h += '<div class="info-spec-item"><div class="info-spec-label">Vulnerability</div><div class="info-spec-val">' + det.itemVulnerability + ' %</div></div>';
+        if (lot.accessLevel) h += '<div class="info-spec-item"><div class="info-spec-label">Access Level</div><div class="info-spec-val">' + lot.accessLevel + '</div></div>';
+        if (det.specs && typeof det.specs === 'object') {
+            if (Array.isArray(det.specs)) {
+                for (const spec of det.specs) {
+                    if (spec && typeof spec === 'object') {
+                        if (spec.type) h += '<div class="info-spec-item"><div class="info-spec-label">Type</div><div class="info-spec-val">' + spec.type + '</div></div>';
+                        if (spec.power && Array.isArray(spec.power)) h += '<div class="info-spec-item"><div class="info-spec-label">Power</div><div class="info-spec-val">' + spec.power[0] + ' – ' + spec.power[1] + '</div></div>';
+                        if (spec.fileTypes && Array.isArray(spec.fileTypes)) h += '<div class="info-spec-item"><div class="info-spec-label">File Types</div><div class="info-spec-val">' + spec.fileTypes.join(', ') + '</div></div>';
+                        if (spec.serverTypes && Array.isArray(spec.serverTypes)) h += '<div class="info-spec-item"><div class="info-spec-label">Server Types</div><div class="info-spec-val">' + spec.serverTypes.join(', ') + '</div></div>';
+                        if (spec.remote !== undefined) h += '<div class="info-spec-item"><div class="info-spec-label">Remote</div><div class="info-spec-val">' + (spec.remote ? 'Yes' : 'No') + '</div></div>';
+                    }
+                }
+            } else {
+                for (const [specKey, specVal] of Object.entries(det.specs)) {
+                    const label = specKey.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                    let displayVal;
+                    if (Array.isArray(specVal)) { displayVal = specVal.join(', '); }
+                    else if (specVal !== null && typeof specVal === 'object') { displayVal = JSON.stringify(specVal); }
+                    else { displayVal = specVal; }
+                    h += '<div class="info-spec-item"><div class="info-spec-label">' + label + '</div><div class="info-spec-val">' + displayVal + '</div></div>';
+                }
+            }
+        }
+    }
+    h += '</div>';
+    popup.innerHTML = h;
+    popup.classList.add('open');
+    overlay.classList.add('open');
+    const close = () => { popup.classList.remove('open'); overlay.classList.remove('open'); overlay.removeEventListener('click', close); };
+    overlay.addEventListener('click', close);
+}
+
 function renderMarketInto(container, data, labelPrefix, idPrefix) {
+    // Capture currently open expandable sections BEFORE clearing
+    var openSections = {};
+    container.querySelectorAll('.expandable-header.open').forEach(hdr => {
+        var key = hdr.getAttribute('data-expand') || hdr.id;
+        if (key) openSections[key] = true;
+    });
+
     container.innerHTML = '';
 
     if (!data || !data.market) {
@@ -1236,59 +1706,85 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
             groups[cat].push(lot);
         }
 
+        const INFO_BTN_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><g clip-path="url(#mi2)"><path d="M3.759 1.2H12.243c.703 0 1.3.246 1.81.75.502.503.748 1.095.748 1.797v8.495c0 .71-.246 1.305-.748 1.807-.51.505-1.107.751-1.81.751H3.76c-.71 0-1.306-.246-1.809-.749-.502-.502-.749-1.097-.749-1.808V3.747c0-.703.246-1.295.75-1.798.502-.503 1.098-.75 1.808-.75z" stroke="currentColor" stroke-width="0.8"/><path d="M6.994 3.837h2.002v1.992H6.994V3.837zM6.994 7.124h2.002v5.049H6.994V7.124z" fill="currentColor"/></g><defs><clipPath id="mi2"><rect width="16" height="16" fill="currentColor"/></clipPath></defs></svg>';
+        var lotMap = [];
         for (const [cat, items] of Object.entries(groups)) {
             html += `<div class="market-category-title">${cat.charAt(0) + cat.slice(1).toLowerCase()}</div>`;
             for (const lot of items) {
                 const det = lot.details || {};
+                const isAccess = cat === 'ACCESS';
                 const isBought = lot.availableCount === 0;
-                const boughtTag = isBought ? '<span class="market-item-bought">BOUGHT</span>' : '';
+                const boughtTag = isBought && !isAccess ? '<span class="market-item-bought">BOUGHT</span>' : '';
                 const imgHtml = det.image ? `<img src="${det.image}" alt="${det.name || ''}" loading="lazy">` : '';
+
+                let itemName;
+                if (isAccess) {
+                    itemName = (det.serverName || '') + ' ' + (det.accessType || '') + ' access';
+                } else {
+                    itemName = det.name || 'Unknown';
+                }
+
+                const unavailTag = lot.unavailableReason ? `<span class="market-item-bought" style="background:rgba(255,160,0,0.2);color:var(--accent-orange);">${lot.unavailableReason.toUpperCase()}</span>` : '';
+
+                const lotIdx = lotMap.length;
+                lotMap.push(lot);
 
                 html += `<div class="market-item-card">`;
                 html += imgHtml;
                 html += `<div class="market-item-info">`;
-                html += `<div class="market-item-name">${det.name || 'Unknown'}${boughtTag}</div>`;
+                html += `<div class="market-item-header">`;
+                html += `<div class="market-item-name">${itemName}${boughtTag}${unavailTag}</div>`;
+                html += `<button class="market-item-info-btn" data-lot-idx="${lotIdx}">${INFO_BTN_SVG} INFO</button>`;
+                html += `</div>`;
                 html += `<div class="market-item-price">💰 ${lot.price ? lot.price.toLocaleString() : '--'}</div>`;
 
-                // Expandable details per item
                 const uid = idPrefix + '_mitem_' + lot.id;
                 html += `<div class="expandable-header" data-expand="${uid}"><span class="expand-arrow">▶</span><span class="expand-label">Details</span></div>`;
                 html += `<div class="expandable-body" id="${uid}">`;
-                if (det.manufacturer) html += `<div class="detail-row"><span class="label">Manufacturer:</span> ${det.manufacturer}</div>`;
-                if (det.tier) html += `<div class="detail-row"><span class="label">Tier:</span> ${det.tier}</div>`;
-                if (det.itemVulnerability !== undefined) html += `<div class="detail-row"><span class="label">Vulnerability:</span> ${det.itemVulnerability}%</div>`;
-                if (det.price) html += `<div class="detail-row"><span class="label">Base Price:</span> 💰 ${det.price.toLocaleString()}</div>`;
-                if (lot.priceModifier) html += `<div class="detail-row"><span class="label">Price Modifier:</span> ${lot.priceModifier > 0 ? '+' : ''}${lot.priceModifier}</div>`;
-                if (lot.accessLevel) html += `<div class="detail-row"><span class="label">Access Level:</span> ${lot.accessLevel}</div>`;
-                // Specs data
-                if (det.specs && typeof det.specs === 'object') {
-                    // Handle specs that is an array of software objects
-                    if (Array.isArray(det.specs)) {
-                        for (const spec of det.specs) {
-                            if (spec && typeof spec === 'object') {
-                                if (spec.type) html += `<div class="detail-row"><span class="label">Type:</span> ${spec.type}</div>`;
-                                if (spec.power && Array.isArray(spec.power)) html += `<div class="detail-row"><span class="label">Power:</span> ${spec.power[0]} – ${spec.power[1]}</div>`;
-                                if (spec.fileTypes && Array.isArray(spec.fileTypes)) html += `<div class="detail-row"><span class="label">File Types:</span> ${spec.fileTypes.join(', ')}</div>`;
-                                if (spec.serverTypes && Array.isArray(spec.serverTypes)) html += `<div class="detail-row"><span class="label">Server Types:</span> ${spec.serverTypes.join(', ')}</div>`;
-                                if (spec.remote !== undefined) html += `<div class="detail-row"><span class="label">Remote:</span> ${spec.remote ? 'Yes' : 'No'}</div>`;
+
+                if (isAccess) {
+                    if (lot.accessLevel) html += `<div class="detail-row"><span class="label">Access Level:</span> ${lot.accessLevel}</div>`;
+                    if (det.durationHours !== undefined) html += `<div class="detail-row"><span class="label">Duration:</span> ${det.durationHours}h</div>`;
+                    if (det.accessType) html += `<div class="detail-row"><span class="label">Access Type:</span> ${det.accessType}</div>`;
+                    if (det.serverName) html += `<div class="detail-row"><span class="label">Server:</span> ${det.serverName}</div>`;
+                    html += `<div class="detail-row"><span class="label">Available:</span> ${lot.availableCount !== undefined ? lot.availableCount : '--'}</div>`;
+                    if (lot.lockedByQuest) html += `<div class="detail-row"><span class="label">Locked By Quest:</span> ${lot.lockedByQuest}</div>`;
+                    if (lot.unavailableReason) html += `<div class="detail-row"><span class="label">Status:</span> ${lot.unavailableReason}</div>`;
+                } else {
+                    if (det.manufacturer) html += `<div class="detail-row"><span class="label">Manufacturer:</span> ${det.manufacturer}</div>`;
+                    if (det.tier) html += `<div class="detail-row"><span class="label">Tier:</span> ${det.tier}</div>`;
+                    if (det.itemVulnerability !== undefined) html += `<div class="detail-row"><span class="label">Vulnerability:</span> ${det.itemVulnerability}%</div>`;
+                    if (det.price) html += `<div class="detail-row"><span class="label">Base Price:</span> 💰 ${det.price.toLocaleString()}</div>`;
+                    if (lot.priceModifier) html += `<div class="detail-row"><span class="label">Price Modifier:</span> ${lot.priceModifier > 0 ? '+' : ''}${lot.priceModifier}</div>`;
+                    if (lot.accessLevel) html += `<div class="detail-row"><span class="label">Access Level:</span> ${lot.accessLevel}</div>`;
+                    if (det.specs && typeof det.specs === 'object') {
+                        if (Array.isArray(det.specs)) {
+                            for (const spec of det.specs) {
+                                if (spec && typeof spec === 'object') {
+                                    if (spec.type) html += `<div class="detail-row"><span class="label">Type:</span> ${spec.type}</div>`;
+                                    if (spec.power && Array.isArray(spec.power)) html += `<div class="detail-row"><span class="label">Power:</span> ${spec.power[0]} – ${spec.power[1]}</div>`;
+                                    if (spec.fileTypes && Array.isArray(spec.fileTypes)) html += `<div class="detail-row"><span class="label">File Types:</span> ${spec.fileTypes.join(', ')}</div>`;
+                                    if (spec.serverTypes && Array.isArray(spec.serverTypes)) html += `<div class="detail-row"><span class="label">Server Types:</span> ${spec.serverTypes.join(', ')}</div>`;
+                                    if (spec.remote !== undefined) html += `<div class="detail-row"><span class="label">Remote:</span> ${spec.remote ? 'Yes' : 'No'}</div>`;
+                                }
                             }
-                        }
-                    } else {
-                        for (const [specKey, specVal] of Object.entries(det.specs)) {
-                            const label = specKey.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
-                            let displayVal;
-                            if (Array.isArray(specVal)) {
-                                displayVal = specVal.join(', ');
-                            } else if (specVal !== null && typeof specVal === 'object') {
-                                displayVal = JSON.stringify(specVal);
-                            } else {
-                                displayVal = specVal;
+                        } else {
+                            for (const [specKey, specVal] of Object.entries(det.specs)) {
+                                const label = specKey.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                                let displayVal;
+                                if (Array.isArray(specVal)) {
+                                    displayVal = specVal.join(', ');
+                                } else if (specVal !== null && typeof specVal === 'object') {
+                                    displayVal = JSON.stringify(specVal);
+                                } else {
+                                    displayVal = specVal;
+                                }
+                                html += `<div class="detail-row"><span class="label">${label}:</span> ${displayVal}</div>`;
                             }
-                            html += `<div class="detail-row"><span class="label">${label}:</span> ${displayVal}</div>`;
                         }
                     }
+                    if (det.description) html += `<div class="detail-row" style="color:var(--text-dim);font-style:italic;margin-top:2px;">${det.description}</div>`;
                 }
-                if (det.description) html += `<div class="detail-row" style="color:var(--text-dim);font-style:italic;margin-top:2px;">${det.description}</div>`;
                 html += `</div>`;
 
                 html += `</div></div>`;
@@ -1368,6 +1864,13 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
 
     // Wire up expandable toggles inside market
     container.querySelectorAll('.expandable-header').forEach(hdr => {
+        var key = hdr.getAttribute('data-expand') || hdr.id;
+        if (key && openSections[key]) {
+            hdr.classList.add('open');
+            var bodyId = hdr.getAttribute('data-expand') || hdr.id.replace('Toggle', 'Body');
+            var body = document.getElementById(bodyId);
+            if (body) body.classList.add('open');
+        }
         hdr.addEventListener('click', () => {
             hdr.classList.toggle('open');
             const targetId = hdr.getAttribute('data-expand') || hdr.id.replace('Toggle', 'Body');
@@ -1375,6 +1878,25 @@ function renderMarketInto(container, data, labelPrefix, idPrefix) {
             if (body) body.classList.toggle('open');
         });
     });
+
+    // Wire up market item Info buttons
+    if (lotMap && lotMap.length > 0) {
+        container.querySelectorAll('.market-item-info-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.dataset.lotIdx, 10);
+                if (!isNaN(idx) && lotMap[idx]) showMarketInfoPopup(lotMap[idx]);
+            });
+        });
+    }
+
+    // Show/hide cleanup button based on failed jobs
+    const cleanupBtnMap = { home: 'cleanupCoreMarketBtn', dark: 'cleanupDarkMarketBtn', soyuz: 'cleanupSoyuzMarketBtn', usol: 'cleanupUsolMarketBtn' };
+    const cleanupBtn = document.getElementById(cleanupBtnMap[idPrefix]);
+    if (cleanupBtn) {
+        const failedJobs = (md.recentJobs || []).filter(j => j.status === 'FAILED');
+        cleanupBtn.style.display = failedJobs.length > 0 ? '' : 'none';
+    }
 }
 
 // Store static reset timestamps so timers tick independently
@@ -1502,9 +2024,15 @@ function renderUsolMarket(data, available, maintenanceEndsAt, blockerServer) {
     if (available === false) {
         let timerHtml = '';
         if (blockerServer) timerHtml += ' (' + blockerServer + ' in maintenance';
-        if (maintenanceEndsAt) timerHtml += ' — ends ' + formatTimeRemaining(maintenanceEndsAt);
-        if (blockerServer || maintenanceEndsAt) timerHtml += ')';
-        const warningHtml = '<div style="color:var(--accent-orange);font-size:10px;margin-bottom:4px;">⚠️ USOL market unreachable' + timerHtml + '</div>';
+        if (maintenanceEndsAt) {
+            const diff = new Date(maintenanceEndsAt).getTime() - Date.now();
+            if (diff > 0) {
+                const mins = Math.ceil(diff / 60000);
+                timerHtml += (blockerServer ? ', ' : ' (') + '~' + mins + 'm remaining';
+            }
+        }
+        if (timerHtml) timerHtml += ')';
+        const warningHtml = '<div class="warning-banner">⚠️ USOL market server is currently unreachable' + timerHtml + '</div>';
         if (data && data.market) {
             if (data.nextJobsResetAt) usolNextJobsResetAt = data.nextJobsResetAt;
             if (data.market.marketName) {
@@ -1897,6 +2425,16 @@ async function refreshMercenariesOnly() {
     refreshAllTimestamps();
 }
 
+async function refreshLoadoutOnly() {
+    try {
+        const tab = await getCor3Tab();
+        if (tab) await chrome.tabs.sendMessage(tab.id, { action: "requestLoadout" });
+    } catch (e) {}
+    await waitForStorageKey('loadoutData', 5000);
+    await loadLoadout();
+    refreshAllTimestamps();
+}
+
 refreshAllBtn.addEventListener('click', async () => {
     if (isRefreshing) return;
     isRefreshing = true;
@@ -1949,6 +2487,10 @@ refreshAllBtn.addEventListener('click', async () => {
 
         // 9. Mercenary data
         await executeRefreshStep('mercenaries', refreshMercenariesOnly);
+        await humanDelay();
+
+        // 10. Loadout
+        await executeRefreshStep('loadout', refreshLoadoutOnly);
 
     } catch (e) {
         console.error('[COR3 Helper] Refresh All error:', e);
@@ -2044,16 +2586,22 @@ function renderPinnedTimers() {
             <div style="width: 200%;"><span class="pinned-timer-symbol-core">🏠 </span>
             <span class="pinned-timer-label">${name} Jobs</span></div>
             <span class="pinned-timer-value" id="pinnedCoreJobsValue">--:--:--</span>
-            <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
-                <input type="checkbox" id="autoRefreshCore" ${autoRefresh.home_jobs ? 'checked' : ''}> Auto
-            </label>
         `;
-        pinnedTimersContainer.appendChild(row);
-        row.querySelector('#autoRefreshCore').addEventListener('change', async (e) => {
-            autoRefresh.home_jobs = e.target.checked;
-            await savePinnedState();
-            sendAutoRefreshToContent();
-        });
+        if (!isHelper) {
+            row.innerHTML += `
+                <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
+                    <input type="checkbox" id="autoRefreshCore" ${autoRefresh.home_jobs ? 'checked' : ''}> Auto
+                </label>
+            `;
+            pinnedTimersContainer.appendChild(row);
+            row.querySelector('#autoRefreshCore').addEventListener('change', async (e) => {
+                autoRefresh.home_jobs = e.target.checked;
+                await savePinnedState();
+                sendAutoRefreshToContent();
+            });
+        } else {
+            pinnedTimersContainer.appendChild(row);
+        }
     }
     if (pinnedTimers.dark_jobs) {
         const name = darkMarketName || 'Market-2';
@@ -2063,16 +2611,22 @@ function renderPinnedTimers() {
             <div style="width: 200%;"><span class="pinned-timer-symbol-dark">🌑 </span>
             <span class="pinned-timer-label">${name} Jobs</span></div>
             <span class="pinned-timer-value" id="pinnedDarkJobsValue">--:--:--</span>
-            <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
-                <input type="checkbox" id="autoRefreshDark" ${autoRefresh.dark_jobs ? 'checked' : ''}> Auto
-            </label>
         `;
-        pinnedTimersContainer.appendChild(row);
-        row.querySelector('#autoRefreshDark').addEventListener('change', async (e) => {
-            autoRefresh.dark_jobs = e.target.checked;
-            await savePinnedState();
-            sendAutoRefreshToContent();
-        });
+        if (!isHelper) {
+            row.innerHTML += `
+                <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
+                    <input type="checkbox" id="autoRefreshDark" ${autoRefresh.dark_jobs ? 'checked' : ''}> Auto
+                </label>
+            `;
+            pinnedTimersContainer.appendChild(row);
+            row.querySelector('#autoRefreshDark').addEventListener('change', async (e) => {
+                autoRefresh.dark_jobs = e.target.checked;
+                await savePinnedState();
+                sendAutoRefreshToContent();
+            });
+        } else {
+            pinnedTimersContainer.appendChild(row);
+        }
     }
 
     if (pinnedTimers.soyuz_jobs) {
@@ -2083,16 +2637,22 @@ function renderPinnedTimers() {
             <div style="width: 200%;"><span class="pinned-timer-symbol-soyuz">☭ </span>
             <span class="pinned-timer-label">${name} Jobs</span></div>
             <span class="pinned-timer-value" id="pinnedSoyuzJobsValue">--:--:--</span>
-            <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
-                <input type="checkbox" id="autoRefreshSoyuz" ${autoRefresh.soyuz_jobs ? 'checked' : ''}> Auto
-            </label>
         `;
-        pinnedTimersContainer.appendChild(row);
-        row.querySelector('#autoRefreshSoyuz').addEventListener('change', async (e) => {
-            autoRefresh.soyuz_jobs = e.target.checked;
-            await savePinnedState();
-            sendAutoRefreshToContent();
-        });
+        if (!isHelper) {
+            row.innerHTML += `
+                <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
+                    <input type="checkbox" id="autoRefreshSoyuz" ${autoRefresh.soyuz_jobs ? 'checked' : ''}> Auto
+                </label>
+            `;
+            pinnedTimersContainer.appendChild(row);
+            row.querySelector('#autoRefreshSoyuz').addEventListener('change', async (e) => {
+                autoRefresh.soyuz_jobs = e.target.checked;
+                await savePinnedState();
+                sendAutoRefreshToContent();
+            });
+        } else {
+            pinnedTimersContainer.appendChild(row);
+        }
     }
 
     if (pinnedTimers.usol_jobs) {
@@ -2103,16 +2663,22 @@ function renderPinnedTimers() {
             <div style="width: 200%;"><span class="pinned-timer-symbol-usol">☮ </span>
             <span class="pinned-timer-label">${name} Jobs</span></div>
             <span class="pinned-timer-value" id="pinnedUsolJobsValue">--:--:--</span>
-            <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
-                <input type="checkbox" id="autoRefreshUsol" ${autoRefresh.usol_jobs ? 'checked' : ''}> Auto
-            </label>
         `;
-        pinnedTimersContainer.appendChild(row);
-        row.querySelector('#autoRefreshUsol').addEventListener('change', async (e) => {
-            autoRefresh.usol_jobs = e.target.checked;
-            await savePinnedState();
-            sendAutoRefreshToContent();
-        });
+        if (!isHelper) {
+            row.innerHTML += `
+                <label class="pinned-auto-refresh" title="Auto-refresh jobs when timer hits 0">
+                    <input type="checkbox" id="autoRefreshUsol" ${autoRefresh.usol_jobs ? 'checked' : ''}> Auto
+                </label>
+            `;
+            pinnedTimersContainer.appendChild(row);
+            row.querySelector('#autoRefreshUsol').addEventListener('change', async (e) => {
+                autoRefresh.usol_jobs = e.target.checked;
+                await savePinnedState();
+                sendAutoRefreshToContent();
+            });
+        } else {
+            pinnedTimersContainer.appendChild(row);
+        }
     }
 
     // Expedition pinned timers
@@ -2618,6 +3184,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.simpleDecryptSolverStatus) {
         renderSimpleDecryptSolverStatus(changes.simpleDecryptSolverStatus.newValue);
     }
+    // Live update loadout data
+    if (area === 'local' && changes.loadoutData) {
+        renderLoadout(changes.loadoutData.newValue);
+        refreshAllTimestamps();
+    }
+    if (area === 'local' && changes.loadoutError && changes.loadoutError.newValue) {
+        showLoadoutError(changes.loadoutError.newValue.message || JSON.stringify(changes.loadoutError.newValue));
+    }
 });
 
 // Version Info ---
@@ -2875,6 +3449,597 @@ function renderArchivedExpeditions(data) {
 // Auto-load archived expeditions from cache on popup open
 loadArchivedExpeditions();
 
+// --- Loadout Viewer ---
+const loadoutError = document.getElementById('loadoutError');
+const loadoutHwContainer = document.getElementById('loadoutHwContainer');
+const loadoutOverviewContainer = document.getElementById('loadoutOverviewContainer');
+const loadoutSwContainer = document.getElementById('loadoutSwContainer');
+const loadoutSwCount = document.getElementById('loadoutSwCount');
+const refreshLoadoutBtn = document.getElementById('refreshLoadoutBtn');
+const loadoutHwToggle = document.getElementById('loadoutHwToggle');
+const loadoutHwBody = document.getElementById('loadoutHwBody');
+const loadoutOverviewToggle = document.getElementById('loadoutOverviewToggle');
+const loadoutOverviewBody = document.getElementById('loadoutOverviewBody');
+const loadoutSwToggle = document.getElementById('loadoutSwToggle');
+const loadoutSwBody = document.getElementById('loadoutSwBody');
+const loadoutSwSort = document.getElementById('loadoutSwSort');
+const loadoutSwSearch = document.getElementById('loadoutSwSearch');
+
+let cachedLoadoutData = null;
+
+loadoutHwToggle.addEventListener('click', () => { loadoutHwToggle.classList.toggle('open'); loadoutHwBody.classList.toggle('open'); });
+loadoutOverviewToggle.addEventListener('click', () => { loadoutOverviewToggle.classList.toggle('open'); loadoutOverviewBody.classList.toggle('open'); });
+loadoutSwToggle.addEventListener('click', () => { loadoutSwToggle.classList.toggle('open'); loadoutSwBody.classList.toggle('open'); });
+
+const LOADOUT_SPEC_MAP = {
+    cpuFrequency: 'CPU Frequency', cpuCores: 'CPU Cores', cpuConsuming: 'Power Consuming',
+    gpuPower: 'GPU Power', gpuMemory: 'GPU Memory', gpuConsuming: 'Power Consuming',
+    ramFrequency: 'RAM Frequency', ramMemory: 'RAM Memory',
+    psuPower: 'PSU Power', psuProtection: 'PSU Protection',
+    cpu_frequency: 'CPU Frequency', cpu_cores: 'CPU Cores',
+    gpu_power: 'GPU Power', gpu_memory: 'GPU Memory',
+    ram_frequency: 'RAM Frequency', ram_memory: 'RAM Memory',
+    psu_power: 'PSU Power', psu_total: 'PSU Total'
+};
+const LOADOUT_UNIT_MAP = {
+    cpu_frequency: 'GHz', cpuFrequency: 'GHz',
+    cpu_cores: 'Count', cpuCores: 'Count',
+    gpu_power: 'PFLOPS', gpuPower: 'PFLOPS',
+    gpu_memory: 'TB', gpuMemory: 'TB',
+    ram_frequency: 'GHz', ramFrequency: 'GHz',
+    ram_memory: 'TB', ramMemory: 'TB',
+    psu_power: 'kW', psuPower: 'kW',
+    psu_total: 'kW', cpuConsuming: 'kW', gpuConsuming: 'kW'
+};
+function loadoutSpecLabel(key) { return LOADOUT_SPEC_MAP[key] || key; }
+function loadoutUnitLabel(key) { return LOADOUT_UNIT_MAP[key] || ''; }
+
+const LOADOUT_INFO_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:currentColor"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M12 17V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="8" r="0.75" fill="currentColor"/></svg>';
+const LOADOUT_INFO_SQUARE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><g clip-path="url(#li)"><path d="M3.759 1.2H12.243c.703 0 1.3.246 1.81.75.502.503.748 1.095.748 1.797v8.495c0 .71-.246 1.305-.748 1.807-.51.505-1.107.751-1.81.751H3.76c-.71 0-1.306-.246-1.809-.749-.502-.502-.749-1.097-.749-1.808V3.747c0-.703.246-1.295.75-1.798.502-.503 1.098-.75 1.808-.75z" stroke="currentColor" stroke-width="0.8"/><path d="M6.994 3.837h2.002v1.992H6.994V3.837zM6.994 7.124h2.002v5.049H6.994V7.124z" fill="currentColor"/></g><defs><clipPath id="li"><rect width="16" height="16" fill="currentColor"/></clipPath></defs></svg>';
+const LOADOUT_CHANGE_SVG = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="mc" maskUnits="userSpaceOnUse" x="0" y="0" width="15" height="15" style="mask-type:alpha"><rect width="15" height="15" fill="#D9D9D9"/></mask><g mask="url(#mc)"><path d="M4.375 13.125L1.25 10L4.375 6.875L5.26562 7.75L3.64062 9.375H13.125V10.625H3.64062L5.26562 12.25L4.375 13.125ZM10.625 8.125L9.73438 7.25L11.3594 5.625H1.875V4.375H11.3594L9.73438 2.75L10.625 1.875L13.75 5L10.625 8.125Z" fill="#76C1D1"/></g></svg>';
+const LOADOUT_INSTALL_SVG = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="mi" maskUnits="userSpaceOnUse" x="0" y="0" width="15" height="15" style="mask-type:alpha"><rect width="15" height="15" fill="#D9D9D9"/></mask><g mask="url(#mi)"><path d="M7.5 9.894L3.95 6.345l1.167-1.18L6.67 6.728V2.2h1.656v4.528l1.554-1.563 1.167 1.18L7.5 9.894zM3.855 12.8c-.461 0-.853-.16-1.174-.482A1.614 1.614 0 012.2 11.144V9.27h1.656v1.875h7.288V9.27H12.8v1.875c0 .461-.16.853-.482 1.174-.321.322-.713.482-1.174.482H3.855z" fill="#00CDAB"/></g></svg>';
+const LOADOUT_UNINSTALL_SVG = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="mu" maskUnits="userSpaceOnUse" x="0" y="0" width="15" height="15" style="mask-type:alpha"><rect width="15" height="15" fill="#D9D9D9"/></mask><g mask="url(#mu)"><path d="M4.277 13.425a1.614 1.614 0 01-1.174-.482 1.614 1.614 0 01-.482-1.174V3.847H1.793V2.191h3.628V1.363H9.56v.828h3.646v1.656h-.828v7.922c0 .461-.16.853-.482 1.174-.321.322-.713.482-1.174.482H4.277zm6.445-9.578H4.277v7.922h6.445V3.847zM5.466 10.616h1.453V4.991H5.466v5.625zm2.614 0h1.453V4.991H8.08v5.625z" fill="#FF5050"/></g></svg>';
+
+const HW_SPEC_DISPLAY = {
+    cpuFrequency: ['Frequency', 'GHz'],
+    cpuCores: ['Cores count', 'count'],
+    cpuConsuming: ['Power consuming', 'kW'],
+    gpuPower: ['Power', 'PFLOPS'],
+    gpuMemory: ['Memory', 'TB'],
+    gpuConsuming: ['Power consuming', 'kW'],
+    ramFrequency: ['Frequency', 'GHz'],
+    ramMemory: ['Memory', 'TB'],
+    psuPower: ['Power', 'kW'],
+    psuProtection: ['Protection', '%']
+};
+
+function hwSpecRows(specs, vuln) {
+    let h = '';
+    Object.entries(specs).forEach(([k, v]) => {
+        const d = HW_SPEC_DISPLAY[k];
+        if (!d) return;
+        h += '<div class="loadout-hw-stat-row"><span>' + d[0] + ' ' + d[1] + '</span><span class="stat-val">' + v + '</span></div>';
+    });
+    if (vuln !== undefined && vuln !== null) {
+        h += '<div class="loadout-hw-stat-row"><span>Vulnerability %</span><span class="stat-val">' + vuln + '</span></div>';
+    }
+    return h;
+}
+
+function hwSpecRowsSmall(specs, vuln, cls) {
+    let h = '';
+    Object.entries(specs).forEach(([k, v]) => {
+        const d = HW_SPEC_DISPLAY[k];
+        if (!d) return;
+        h += '<div class="' + cls + '"><span>' + d[0] + ' ' + d[1] + '</span><span class="stat-val">' + v + '</span></div>';
+    });
+    if (vuln !== undefined && vuln !== null) {
+        h += '<div class="' + cls + '"><span>Vulnerability %</span><span class="stat-val">' + vuln + '</span></div>';
+    }
+    return h;
+}
+
+function showHwInfoPopup(item) {
+    const popup = document.getElementById('hwInfoPopup');
+    const overlay = document.getElementById('hwInfoOverlay');
+    let h = '<div class="info-title">' + LOADOUT_INFO_SVG + ' ' + (item.name || '').toUpperCase() + '</div>';
+    h += '<div class="info-desc">';
+    if (item.image) h += '<img src="' + item.image + '" alt="">';
+    h += '<span>' + (item.description || 'No description available.') + '</span>';
+    h += '</div>';
+    h += '<div class="info-specs">';
+    const specs = item.specs || {};
+    Object.entries(specs).forEach(([k, v]) => {
+        const d = HW_SPEC_DISPLAY[k];
+        if (!d) return;
+        h += '<div class="info-spec-item"><div class="info-spec-label">' + d[0] + '</div><div class="info-spec-val">' + v + ' ' + d[1] + '</div></div>';
+    });
+    if (item.itemVulnerability !== undefined) {
+        h += '<div class="info-spec-item"><div class="info-spec-label">Vulnerability</div><div class="info-spec-val">' + item.itemVulnerability + ' %</div></div>';
+    }
+    h += '</div>';
+    popup.innerHTML = h;
+    popup.classList.add('open');
+    overlay.classList.add('open');
+    const close = () => { popup.classList.remove('open'); overlay.classList.remove('open'); overlay.removeEventListener('click', close); };
+    overlay.addEventListener('click', close);
+}
+
+function renderLoadoutHardware(data) {
+    if (!data || !data.equippedHardware) {
+        loadoutHwContainer.innerHTML = '<div class="no-decisions">No hardware data</div>';
+        return;
+    }
+    const hw = data.equippedHardware;
+    const avail = data.ownedHardware || [];
+    const cats = ['cpu', 'gpu', 'ram', 'psu'];
+    let html = '';
+    cats.forEach(cat => {
+        const item = hw[cat];
+        if (!item) return;
+        const replacements = avail.filter(a => a.category && a.category.toLowerCase() === cat && a.id !== item.id);
+        html += '<div class="loadout-hw-card">';
+        html += '<div class="loadout-hw-left">';
+        html += '<div class="loadout-hw-header">';
+        html += '<div class="loadout-hw-cat">' + (item.category || cat.toUpperCase()) + '</div>';
+        html += '<div class="loadout-hw-name">' + (item.name || 'Unknown') + '</div>';
+        html += '</div>';
+        html += '<div class="loadout-hw-stats">' + hwSpecRows(item.specs || {}, item.itemVulnerability) + '</div>';
+        html += '</div>';
+        html += '<div class="loadout-hw-right">';
+        html += '<button class="loadout-hw-change-btn" data-cat="' + cat + '">' + LOADOUT_CHANGE_SVG + 'CHANGE</button>';
+        html += '<button class="loadout-hw-info-btn" data-hw-cat="' + cat + '">' + LOADOUT_INFO_SVG + 'INFO</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="loadout-hw-replace-list" data-cat="' + cat + '">';
+        html += '<input type="text" class="loadout-hw-replace-search" placeholder="Search..." data-cat="' + cat + '">';
+        html += '<div class="replace-items-wrap" data-cat="' + cat + '">';
+        replacements.forEach(r => {
+            html += '<div class="loadout-hw-replace-item" data-search-name="' + (r.name || '').toLowerCase() + '">';
+            html += '<div class="replace-left">';
+            html += '<div class="replace-header">';
+            html += '<div class="replace-cat">' + (r.category || cat.toUpperCase()) + '</div>';
+            html += '<div class="replace-name">' + (r.name || '') + '</div>';
+            html += '</div>';
+            html += '<div class="replace-stats">' + hwSpecRowsSmall(r.specs || {}, r.itemVulnerability, 'replace-stat-row') + '</div>';
+            html += '</div>';
+            html += '<div class="replace-right">';
+            html += '<button class="replace-btn" data-id="' + r.id + '">' + LOADOUT_CHANGE_SVG + 'CHANGE</button>';
+            html += '<button class="replace-info-btn" data-hw-id="' + r.id + '">' + LOADOUT_INFO_SVG + '<span style="margin-top: 1px;">INFO</span></button>';
+            html += '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        html += '</div>';
+    });
+    loadoutHwContainer.innerHTML = html || '<div class="no-decisions">No hardware equipped</div>';
+
+    loadoutHwContainer.querySelectorAll('.loadout-hw-change-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const cat = btn.dataset.cat;
+            const list = loadoutHwContainer.querySelector('.loadout-hw-replace-list[data-cat="' + cat + '"]');
+            if (list) list.classList.toggle('open');
+        });
+    });
+
+    loadoutHwContainer.querySelectorAll('.loadout-hw-replace-search').forEach(input => {
+        input.addEventListener('input', () => {
+            const cat = input.dataset.cat;
+            const val = input.value.toLowerCase().trim();
+            const wrap = loadoutHwContainer.querySelector('.replace-items-wrap[data-cat="' + cat + '"]');
+            if (!wrap) return;
+            wrap.querySelectorAll('.loadout-hw-replace-item').forEach(item => {
+                item.style.display = !val || item.dataset.searchName.includes(val) ? '' : 'none';
+            });
+        });
+    });
+
+    loadoutHwContainer.querySelectorAll('.replace-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            clearLoadoutError();
+            const moduleConfigId = btn.dataset.id;
+            btn.disabled = true;
+            btn.innerHTML = '...';
+            try {
+                const tab = await getCor3Tab();
+                if (tab) await chrome.tabs.sendMessage(tab.id, { action: "equipHardware", moduleConfigId });
+            } catch (err) { showLoadoutError('Equip failed: ' + err.message); }
+        });
+    });
+
+    loadoutHwContainer.querySelectorAll('.loadout-hw-info-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const cat = btn.dataset.hwCat;
+            const item = hw[cat];
+            if (item) showHwInfoPopup(item);
+        });
+    });
+
+    loadoutHwContainer.querySelectorAll('.replace-info-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = btn.dataset.hwId;
+            const item = avail.find(a => a.id === id);
+            if (item) showHwInfoPopup(item);
+        });
+    });
+}
+
+function renderLoadoutOverview(data) {
+    if (!data || !data.resources) {
+        loadoutOverviewContainer.innerHTML = '<div class="no-decisions">No resource data</div>';
+        return;
+    }
+    const res = data.resources;
+    const supply = res.supply || {};
+    const demand = res.demand || {};
+    const TOTAL_CELLS = 20;
+    const UNIT_LABELS = { cpu_frequency: 'GHZ', cpu_cores: 'COUNT', gpu_power: 'PFLOPS', gpu_memory: 'TB', ram_frequency: 'GHZ', ram_memory: 'TB', psu_power: 'KW' };
+
+    let html = '<div class="loadout-res-stats">';
+    html += '<div class="loadout-res-header"><div class="loadout-res-header-cell">Type</div><div class="loadout-res-header-cell">Usage / Available</div></div>';
+    const keys = ['cpu_frequency', 'cpu_cores', 'gpu_power', 'gpu_memory', 'ram_frequency', 'ram_memory', 'psu_power'];
+    keys.forEach(key => {
+        const s = supply[key];
+        const d = demand[key] || demand[key === 'psu_power' ? 'psu_total' : key] || 0;
+        if (s === undefined) return;
+        const ratio = s > 0 ? Math.min(d / s, 1) : 0;
+        let colorFill = '';
+        if (ratio > 0.95) { colorFill = 'red' }
+        else if (ratio > 0.75) { colorFill = 'yellow' }
+        else { colorFill = 'blue' }
+
+        const filledCount = Math.round(ratio * TOTAL_CELLS);
+        const unit = UNIT_LABELS[key] || '';
+        html += '<div class="loadout-res-row">';
+        html += '<div class="loadout-res-name">' + loadoutSpecLabel(key) + '</div>';
+        html += '<div class="loadout-res-bar-wrap">';
+        html += '<div class="loadout-res-bar-edge ' + colorFill + '"></div>';
+        html += '<div class="loadout-res-bar-cells">';
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            html += '<div class="loadout-res-bar-cell ' + (i < filledCount ? 'filled-' : 'empty-') + colorFill + '"></div>';
+        }
+        html += '</div>';
+        html += '<div class="loadout-res-bar-edge ' + colorFill + '"></div>';
+        html += '</div>';
+        const dFmt = Number.isInteger(d) ? d : parseFloat(d.toFixed(2));
+        const sFmt = Number.isInteger(s) ? s : parseFloat(s.toFixed(2));
+        html += '<div class="loadout-res-vals"><span class="res-highlight">' + dFmt + ' / ' + sFmt + '</span> ' + unit + '</div>';
+        html += '</div>';
+    });
+    html += '</div>';
+    loadoutOverviewContainer.innerHTML = html;
+}
+
+function loadoutToolSvg(type) {
+    const t = (type || '').toUpperCase();
+    if (t === 'DECRYPT') return '<svg class="loadout-sw-tool-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M14.28 6.929c-.018.67.407 1.005 1.276 1.005h5.455L14.28 1.2V6.93zM4.428 1.2c-.96 0-1.439.475-1.439 1.425v18.75c0 .95.48 1.425 1.44 1.425h15.158c.95 0 1.425-.475 1.425-1.425V9.712h-5.456c-.94 0-1.633-.212-2.076-.638-.679-.47-1.004-1.204-.977-2.2V1.2H4.428zm3.88 10.169l1.046 1.059-2.579 2.593 2.592 2.593-1.058 1.06-3.637-3.653 3.637-3.652zm3.678 0h1.52l-1.466 7.304h-1.52l1.466-7.304zm2.66 1.059l1.072-1.06 3.637 3.653-3.664 3.652-1.045-1.059 2.606-2.579-2.606-2.607z" fill="#F1F4F5"/></svg>';
+    if (t === 'HACK') return '<svg class="loadout-sw-tool-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M11.259 11.23H6.067v6.844c0 .811.285 1.496.855 2.055.569.574 1.257.861 2.063.861h2.275V11.23zm6.674 0h-5.192v9.76h2.275c.811 0 1.499-.287 2.063-.861.57-.56.854-1.244.854-2.055V11.23zm1.965 3.203h-.862v1.594h.862c.866 0 1.3.436 1.3 1.307v3.936H22.8v-3.936c0-1.934-.967-2.9-2.902-2.9zm2.759-2h-3.598v1.217h3.598V12.44zm-1.466-5.955c0 .866-.431 1.3-1.293 1.3h-1.323v1.601h1.323c1.925 0 2.887-.967 2.887-2.9V2.73h-1.595v3.755zM4.964 14.433H4.102c-1.935 0-2.902.967-2.902 2.9v3.937h1.602v-3.936c0-.871.434-1.307 1.3-1.307h.862v-1.594zm-.023-1.994v-1.217H1.344v1.217h3.597zM5.425 9.386V7.784H4.102c-.862 0-1.293-.433-1.293-1.3V2.731H1.215v3.754c0 1.934.963 2.901 2.887 2.901h1.323zM6.725 6.334v3.143h10.55V6.334c0-.403-.063-.813-.189-1.232a3.063 3.063 0 00-.574-1.08c-.509-.509-1.129-.763-1.86-.763H9.347c-.73 0-1.35.254-1.859.763a3.063 3.063 0 00-.574 1.08c-.126.42-.189.83-.189 1.232z" fill="white"/></svg>';
+    if (t === 'SEARCH') return '<svg class="loadout-sw-tool-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M17.171 3.934C15.348 2.111 13.144 1.2 10.56 1.2 7.979 1.2 5.775 2.111 3.948 3.934 2.125 5.761 1.214 7.967 1.214 10.552c-.001 2.58.91 4.782 2.734 6.605 1.827 1.827 4.231 2.74 6.812 2.74 1.759 0 3.342-.422 4.749-1.267.278-.167.549-.351.812-.552l1.765 1.765-.001-.005 2.962 2.962 1.939-1.977-2.962-2.956.054-.06-.06.06-1.743-1.738c1.224-1.607 1.836-3.466 1.836-5.578 0-2.584-.914-4.69-2.74-6.517zm.574 6.617c0 1.983-.702 3.674-2.106 5.074-1.4 1.404-3.094 2.106-5.08 2.106-1.982 0-3.675-.702-5.079-2.106-1.4-1.4-2.101-3.091-2.101-5.074 0-1.986.7-3.681 2.101-5.085C6.884 4.066 8.577 3.366 10.56 3.366c1.986 0 3.679.7 5.079 2.1 1.404 1.405 2.106 3.1 2.106 5.085z" fill="white"/></svg>';
+    return '<svg class="loadout-sw-tool-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="white" stroke-width="1.5"/><path d="M12 8v4l2 2" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>';
+}
+
+function getSwToolGroup(sw) {
+    const specs = sw.specs || [];
+    const order = { hack: 0, decrypt: 1, search: 2, view: 3, load: 4 };
+    let best = 99;
+    specs.forEach(s => {
+        const t = (s.type || '').toLowerCase();
+        if (order[t] !== undefined && order[t] < best) best = order[t];
+    });
+    return best;
+}
+
+function swMatchesFilter(sw, filterVal) {
+    if (filterVal === 'all') return true;
+    const specs = sw.specs || [];
+    return specs.some(s => (s.type || '').toLowerCase() === filterVal);
+}
+
+function renderLoadoutSoftware(data) {
+    if (!data) {
+        loadoutSwContainer.innerHTML = '<div class="no-decisions">No software data</div>';
+        return;
+    }
+    const equipped = data.equippedSoftware || [];
+    const available = data.ownedSoftware || [];
+    const softwarePower = (data.resources && data.resources.softwarePower) || [];
+    const equippedIds = new Set(equipped.map(s => s.id));
+    const all = [];
+    equipped.forEach(s => all.push({ ...s, installed: true }));
+    available.filter(s => !equippedIds.has(s.id)).forEach(s => all.push({ ...s, installed: false }));
+
+    const filterVal = loadoutSwSort.value;
+    const searchVal = (loadoutSwSearch.value || '').toLowerCase().trim();
+
+    let filtered = all.filter(s => swMatchesFilter(s, filterVal));
+    if (searchVal) filtered = filtered.filter(s => (s.name || '').toLowerCase().includes(searchVal) || (s.manufacturer || '').toLowerCase().includes(searchVal));
+
+    const installedItems = filtered.filter(s => s.installed).sort((a, b) => getSwToolGroup(a) - getSwToolGroup(b));
+    const uninstalledItems = filtered.filter(s => !s.installed).sort((a, b) => getSwToolGroup(a) - getSwToolGroup(b));
+    const sorted = [...installedItems, ...uninstalledItems];
+
+    const installedCount = equipped.length;
+    const totalCount = all.length;
+    loadoutSwCount.textContent = '(' + installedCount + '/' + totalCount + ')';
+
+    if (sorted.length === 0) {
+        loadoutSwContainer.innerHTML = '<div class="no-decisions">No programs found</div>';
+        return;
+    }
+
+    let html = '';
+    sorted.forEach(sw => {
+        const pwInfo = softwarePower.find(p => p.moduleId === sw.id);
+        const specs = sw.specs || [];
+        const consuming = sw.consuming || {};
+        const zoomList = ["Lyapun", "A/Bver", "RE-nova", "D-Badger", "Porter-triX", "H0pp3R", "Screener"];
+
+        html += '<div class="loadout-sw-card' + (sw.installed ? ' installed' : '') + '">';
+        html += '<div class="loadout-sw-header">';
+        html += '<div class="loadout-sw-row">';
+        if (zoomList.some(substring => (sw.name).includes(substring))) {
+            html += '<img class="loadout-sw-img zoom"'
+        } else {
+            html += '<img class="loadout-sw-img"'
+        }
+        html += ' src="' + (sw.image || '') + '" alt="' + (sw.name || '') + '">';
+        html += '<div class="loadout-sw-name">' + (sw.name || 'Unknown') + '</div>';
+        html += '</div>';
+        if (sw.installed) {
+            html += '<button class="loadout-sw-install-btn uninstall" data-id="' + sw.id + '" data-action="uninstall">' + LOADOUT_UNINSTALL_SVG + 'UNINSTALL</button>';
+        } else {
+            html += '<button class="loadout-sw-install-btn install" data-id="' + sw.id + '" data-action="install">' + LOADOUT_INSTALL_SVG + 'INSTALL</button>';
+        }
+        html += '</div>';
+
+        const funcLines = specs.map(spec => {
+            const typeLabel = (spec.type || '').toUpperCase();
+            let line = '<div>';
+            line += '<span class="func-label">FUNC:</span>';
+            line += '<span class="func-tags">' + typeLabel;
+            if (spec.power) line += ' ' + spec.power[0] + '/' + spec.power[1];
+            line += '</span>';
+            line += '</div>';
+            return line;
+        });
+        html += '<div class="loadout-sw-func">';
+        html += '<div class="func-left">' + funcLines.join(' ') + '</div>';
+        html += '<button class="loadout-sw-info-btn" data-sw-id="' + sw.id + '">' + LOADOUT_INFO_SVG + ' <span style="margin-top: 1px;">INFO</span></button>';
+        html += '</div>';
+
+        html += '<div class="loadout-sw-details" data-details-id="' + sw.id + '">';
+        html += '<div class="loadout-sw-details-header">Basic Required</div>';
+
+        const consumeKeys = ['cpu_frequency', 'cpu_cores', 'gpu_power', 'gpu_memory', 'ram_frequency', 'ram_memory'];
+        const noAllocKeys = new Set(['cpu_frequency', 'ram_frequency']);
+        const supply = (data.resources && data.resources.supply) || {};
+        let hasConsume = false;
+
+        if (sw.installed) {
+            // Only show resource bars for installed software
+            const rowList = [];
+            let minPct = 100;
+            let minPctIndex = 0;
+            let counter = 0;
+            consumeKeys.forEach(ck => {
+                const vals = consuming[ck];
+                if (!vals || !Array.isArray(vals) || vals.length < 2) return;
+                hasConsume = true;
+                const unit = loadoutUnitLabel(ck);
+                let allocV, minV, maxV;
+                if (noAllocKeys.has(ck)) {
+                    allocV = null;
+                    minV = vals[0];
+                    maxV = vals[1];
+                } else {
+                    allocV = vals[0];
+                    minV = vals.length >= 2 ? vals[1] : vals[0];
+                    maxV = vals.length >= 3 ? vals[2] : vals[vals.length - 1];
+                }
+                // Compute available resource after subtracting other equipped software's base demand
+                let otherBaseDemand = 0;
+                equipped.forEach(otherSw => {
+                    if (otherSw.id === sw.id) return;
+                    const otherVals = otherSw.consuming && otherSw.consuming[ck];
+                    if (!otherVals || !Array.isArray(otherVals)) return;
+                    // 3-value = [base, min, max]; 2-value = [min, max] (base=0)
+                    otherBaseDemand += (otherVals.length === 3 ? otherVals[0] : 0);
+                });
+                const availableV = (supply[ck] || 0) - otherBaseDemand;
+                let pct;
+                if (maxV > minV) {
+                    pct = Math.max(0, Math.min(((availableV - minV) / (maxV - minV)), 1)) * 100;
+                } else {
+                    pct = availableV >= minV ? 100 : 0;
+                }
+                if (pct < minPct) {
+                    minPct = pct;
+                    minPctIndex = counter;
+                }
+                rowList.push({
+                    'label': loadoutSpecLabel(ck),
+                    'supplyV': supply[ck] || 0,
+                    'allocV': allocV,
+                    'unit': unit,
+                    'minV': minV,
+                    'maxV': maxV,
+                    'pct': pct
+                });
+                counter++;
+            });
+
+            counter = 0;
+            let color = 'blue';
+            rowList.forEach(obj => {
+                html += '<div class="loadout-sw-stat-row">';
+                html += '<span class="stat-name">' + obj['label'];
+                if (obj['allocV'] !== null) {
+                    html += ' <span class="stat-alloc">(' + obj['allocV'].toFixed(2) + ' ' + obj['unit'] + ')</span>';
+                } else if (obj['unit']) {
+                    html += ' <span class="stat-alloc">(' + obj['unit'] + ')</span>';
+                }
+                html += '</span>';
+                html += '<span class="stat-val">' + obj['minV'].toFixed(2) + '/' + obj['maxV'].toFixed(2) + '</span>';
+                html += '</div>';
+                if (counter === minPctIndex && obj['pct'] !== 100) { color = 'yellow'}
+                else { color = 'blue' }
+                html += '<div class="loadout-sw-stat-bar"><div class="stat-bar-fill-' + color + '" style="width:' + obj['pct'].toFixed(1) + '%"></div></div>';
+                counter++;
+            });
+
+            if (!hasConsume) html += '<div style="font-size:9px;color:rgba(107,120,136,1);">No consumption data</div>';
+        } else {
+            // Uninstalled: show min/max ranges without bars
+            consumeKeys.forEach(ck => {
+                const vals = consuming[ck];
+                if (!vals || !Array.isArray(vals) || vals.length < 2) return;
+                hasConsume = true;
+                const unit = loadoutUnitLabel(ck);
+                let minV, maxV;
+                if (noAllocKeys.has(ck)) { minV = vals[0]; maxV = vals[1]; }
+                else { minV = vals.length >= 2 ? vals[1] : vals[0]; maxV = vals.length >= 3 ? vals[2] : vals[vals.length - 1]; }
+                html += '<div class="loadout-sw-stat-row">';
+                html += '<span class="stat-name">' + loadoutSpecLabel(ck);
+                if (unit) html += ' <span class="stat-alloc">(' + unit + ')</span>';
+                html += '</span>';
+                html += '<span class="stat-val">' + minV.toFixed(2) + '/' + maxV.toFixed(2) + '</span>';
+                html += '</div>';
+                html += '<div class="loadout-sw-stat-bar"><div class="stat-bar-fill"></div></div>';
+            });
+            if (!hasConsume) html += '<div style="font-size:9px;color:rgba(107,120,136,1);">No consumption data</div>';
+        }
+
+        html += '<div class="loadout-sw-tool-section">';
+        specs.forEach(spec => {
+            const typeLabel = (spec.type || '').toUpperCase() + ' TOOL';
+            html += '<div class="loadout-sw-tool-row">';
+            html += '<div>' + loadoutToolSvg(spec.type) + '</div>';
+            html += '<div>';
+            html += '<div class="loadout-sw-tool-name">' + typeLabel + '</div>';
+            html += '<div class="loadout-sw-tool-detail">';
+            if (spec.fileTypes && spec.fileTypes.length > 0) {
+                html += spec.fileTypes.length + ' files';
+                html += ' <span class="info-tooltip">' + LOADOUT_INFO_SQUARE_SVG + '<span class="tooltip-text">' + spec.fileTypes.join(', ') + '</span></span>';
+            }
+            if (spec.serverTypes && spec.serverTypes.length > 0) {
+                html += spec.serverTypes.length + ' servers';
+                html += ' <span class="info-tooltip">' + LOADOUT_INFO_SQUARE_SVG + '<span class="tooltip-text">' + spec.serverTypes.join(', ') + '</span></span>';
+            }
+            html += '</div>';
+            html += '</div>';
+            html += '</div>';
+            if (spec.power) {
+                const pwEntry = pwInfo && pwInfo.abilities ? pwInfo.abilities.find(a => a.type === spec.type) : null;
+                html += '<div class="loadout-sw-power-row">';
+                html += '<span class="power-label">Power</span>';
+                if (pwEntry) {
+                    html += '<span class="power-val" style="color:rgba(0,205,171,1);font-weight:bold;">' + pwEntry.computedPower + '/' + spec.power[1] + '</span>';
+                } else {
+                    html += '<span class="power-val">' + spec.power[0] + '/' + spec.power[1] + '</span>';
+                }
+                html += '</div>';
+                const pwPct = spec.power[1] > 0 ? Math.min(((pwEntry ? pwEntry.computedPower : spec.power[0]) / spec.power[1]) * 100, 100) : 0;
+                if (sw.installed) {
+                    html += '<div class="loadout-sw-stat-bar"><div class="stat-bar-fill-blue" style="width:' + pwPct.toFixed(1) + '%"></div></div>';
+                } else {
+                    html += '<div class="loadout-sw-stat-bar"><div class="stat-bar-fill"></div></div>';
+                }
+            }
+        });
+        html += '</div>';
+
+        if (pwInfo && pwInfo.ratio !== undefined) {
+            html += '<div class="loadout-sw-stat-row" style="margin-top:4px;border-top:1px solid rgba(44,52,62,1);padding-top:4px;"><span class="stat-name">Performance Ratio</span><span class="stat-val">' + (pwInfo.ratio * 100).toFixed(1) + '%</span></div>';
+        }
+
+        html += '</div>';
+        html += '</div>';
+    });
+    loadoutSwContainer.innerHTML = html;
+
+    loadoutSwContainer.querySelectorAll('.loadout-sw-install-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            clearLoadoutError();
+            const moduleConfigId = btn.dataset.id;
+            const action = btn.dataset.action;
+            btn.disabled = true;
+            btn.innerHTML = '...';
+            try {
+                const tab = await getCor3Tab();
+                if (tab) {
+                    if (action === 'install') {
+                        await chrome.tabs.sendMessage(tab.id, { action: "equipSoftware", moduleConfigId });
+                    } else {
+                        await chrome.tabs.sendMessage(tab.id, { action: "unequipSoftware", moduleConfigId });
+                    }
+                }
+            } catch (err) { showLoadoutError((action === 'install' ? 'Install' : 'Uninstall') + ' failed: ' + err.message); }
+        });
+    });
+
+    loadoutSwContainer.querySelectorAll('.loadout-sw-info-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const swId = btn.dataset.swId;
+            const card = btn.closest('.loadout-sw-card');
+            if (!card) return;
+            const details = card.querySelector('.loadout-sw-details[data-details-id="' + swId + '"]');
+            if (details) details.classList.toggle('open');
+        });
+    });
+}
+
+function showLoadoutError(msg) {
+    loadoutError.textContent = msg;
+    loadoutError.style.display = 'block';
+    setTimeout(() => { loadoutError.style.display = 'none'; }, 10000);
+}
+
+function clearLoadoutError() {
+    loadoutError.textContent = '';
+    loadoutError.style.display = 'none';
+}
+
+function renderLoadout(data) {
+    if (!data) {
+        loadoutHwContainer.innerHTML = '<div class="no-decisions">No loadout data yet</div>';
+        loadoutOverviewContainer.innerHTML = '<div class="no-decisions">No loadout data yet</div>';
+        loadoutSwContainer.innerHTML = '<div class="no-decisions">No loadout data yet</div>';
+        return;
+    }
+    cachedLoadoutData = data;
+    renderLoadoutHardware(data);
+    renderLoadoutOverview(data);
+    renderLoadoutSoftware(data);
+}
+
+async function loadLoadout() {
+    const { loadoutData, loadoutError: storedError } = await chrome.storage.local.get(['loadoutData', 'loadoutError']);
+    if (storedError) showLoadoutError(storedError.message || JSON.stringify(storedError));
+    renderLoadout(loadoutData || null);
+}
+
+async function refreshLoadout() {
+    try {
+        const tab = await getCor3Tab();
+        if (!tab) throw new Error('No cor3.gg tab');
+        await chrome.tabs.sendMessage(tab.id, { action: "requestLoadout" });
+        setTimeout(() => { loadLoadout(); refreshAllTimestamps(); }, 3000);
+    } catch (e) {
+        setTimeout(() => { loadLoadout(); refreshAllTimestamps(); }, 500);
+    }
+}
+
+refreshLoadoutBtn.addEventListener('click', () => { clearLoadoutError(); refreshLoadout(); });
+loadoutSwSort.addEventListener('change', () => { if (cachedLoadoutData) renderLoadoutSoftware(cachedLoadoutData); });
+loadoutSwSearch.addEventListener('input', () => { if (cachedLoadoutData) renderLoadoutSoftware(cachedLoadoutData); });
+
+loadLoadout();
+
 // --- Mercenaries ---
 const mercenariesSectionToggle = document.getElementById('mercenariesSectionToggle');
 const mercenariesSectionBody = document.getElementById('mercenariesSectionBody');
@@ -2942,20 +4107,23 @@ chrome.storage.sync.get('autoSendMerc', (data) => {
 
 function saveAutoSendMercSettings() {
     // Read existing settings first to preserve disabledReason
-    chrome.storage.sync.get('autoSendMerc', (data) => {
-        const existing = data.autoSendMerc || {};
-        const isEnabling = autoSendMercenaryToggle.checked;
-        chrome.storage.sync.set({
-            autoSendMerc: {
-                enabled: isEnabling,
-                autoChooseMerc: autoChooseMercToggle ? autoChooseMercToggle.checked : false,
-                mercenaryId: selectedMercenaryId,
-                mercenaryName: selectedMercenaryName ? selectedMercenaryName.textContent : '',
-                // Clear disabledReason only when user re-enables; otherwise preserve it
-                disabledReason: isEnabling ? null : (existing.disabledReason || null)
-            }
+    if (!isHelper) {
+        chrome.storage.sync.get('autoSendMerc', (data) => {
+            const existing = data.autoSendMerc || {};
+            const isEnabling = autoSendMercenaryToggle.checked;
+            console.log("saveAutoSendMercSettings: " + autoChooseMercToggle.checked);
+            chrome.storage.sync.set({
+                autoSendMerc: {
+                    enabled: isEnabling,
+                    autoChooseMerc: autoChooseMercToggle ? autoChooseMercToggle.checked : false,
+                    mercenaryId: selectedMercenaryId,
+                    mercenaryName: selectedMercenaryName ? selectedMercenaryName.textContent : '',
+                    // Clear disabledReason only when user re-enables; otherwise preserve it
+                    disabledReason: isEnabling ? null : (existing.disabledReason || null)
+                }
+            });
         });
-    });
+    }
 }
 
 autoSendMercenaryToggle.addEventListener('change', () => {
@@ -2973,6 +4141,17 @@ if (autoChooseMercToggle) {
         saveAutoSendMercSettings();
         // Re-render mercenaries to update clickability
         loadMercenaries();
+    });
+}
+
+// Auto-sell cheapest items toggle
+const autoSellCheapestToggle = document.getElementById('autoSellCheapestToggle');
+if (autoSellCheapestToggle) {
+    chrome.storage.sync.get('autoSellCheapest', (data) => {
+        autoSellCheapestToggle.checked = !!data.autoSellCheapest;
+    });
+    autoSellCheapestToggle.addEventListener('change', () => {
+        chrome.storage.sync.set({ autoSellCheapest: autoSellCheapestToggle.checked });
     });
 }
 
@@ -3087,7 +4266,7 @@ function renderMercenaries(data) {
 
         // Click to select mercenary for auto-send (disabled when auto-choose merc is on)
         card.addEventListener('click', () => {
-            if (autoChooseMercToggle && autoChooseMercToggle.checked) return;
+            if ((autoChooseMercToggle && autoChooseMercToggle.checked) || (autoSendMercenaryToggle && !autoSendMercenaryToggle.checked)) return;
             selectedMercenaryId = merc.id;
             if (selectedMercenaryName) selectedMercenaryName.textContent = merc.callsign || merc.name || merc.id;
             if (mercenaryConfigRow) mercenaryConfigRow.style.display = '';
@@ -3203,6 +4382,10 @@ const networkFogStatus = document.getElementById('networkFogStatus');
 const moveNotificationsToggle = document.getElementById('moveNotificationsToggle');
 const moveNotificationsStatus = document.getElementById('moveNotificationsStatus');
 
+// --- Resizable Network Map Toggle ---
+const resizableNetworkMapToggle = document.getElementById('resizableNetworkMapToggle');
+const resizableNetworkMapStatus = document.getElementById('resizableNetworkMapStatus');
+
 // --- Auto Update Markets Toggle ---
 const autoUpdateMarketsToggle = document.getElementById('autoUpdateMarketsToggle');
 const autoUpdateMarketsStatus = document.getElementById('autoUpdateMarketsStatus');
@@ -3221,6 +4404,13 @@ function updateMoveNotificationsStatus() {
     moveNotificationsStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
 }
 
+function updateResizableNetworkMapStatus() {
+    if (!resizableNetworkMapToggle || !resizableNetworkMapStatus) return;
+    const isEnabled = resizableNetworkMapToggle.checked;
+    resizableNetworkMapStatus.textContent = isEnabled ? 'Active' : 'Off';
+    resizableNetworkMapStatus.style.color = isEnabled ? 'var(--accent-green)' : 'var(--text-dim)';
+}
+
 function updateAutoUpdateMarketsStatus() {
     if (!autoUpdateMarketsToggle || !autoUpdateMarketsStatus) return;
     const isEnabled = autoUpdateMarketsToggle.checked;
@@ -3229,7 +4419,7 @@ function updateAutoUpdateMarketsStatus() {
 }
 
 // Load saved settings
-chrome.storage.sync.get(['disableBackground', 'disableNetworkFog', 'moveNotificationsLeft', 'autoUpdateMarkets'], (result) => {
+chrome.storage.sync.get(['disableBackground', 'disableNetworkFog', 'moveNotificationsLeft', 'resizableNetworkMap', 'autoUpdateMarkets'], (result) => {
     if (disableBackgroundToggle) {
         disableBackgroundToggle.checked = result.disableBackground || false;
         updateBackgroundStatus();
@@ -3241,6 +4431,10 @@ chrome.storage.sync.get(['disableBackground', 'disableNetworkFog', 'moveNotifica
     if (moveNotificationsToggle) {
         moveNotificationsToggle.checked = result.moveNotificationsLeft || false;
         updateMoveNotificationsStatus();
+    }
+    if (resizableNetworkMapToggle) {
+        resizableNetworkMapToggle.checked = result.resizableNetworkMap || false;
+        updateResizableNetworkMapStatus();
     }
     if (autoUpdateMarketsToggle) {
         autoUpdateMarketsToggle.checked = result.autoUpdateMarkets || false;
@@ -3332,6 +4526,24 @@ if (moveNotificationsToggle) {
     });
 }
 
+// Handle resizable network map toggle changes
+if (resizableNetworkMapToggle) {
+    resizableNetworkMapToggle.addEventListener('change', async () => {
+        const isEnabled = resizableNetworkMapToggle.checked;
+        chrome.storage.sync.set({ resizableNetworkMap: isEnabled });
+        updateResizableNetworkMapStatus();
+        try {
+            const tab = await getCor3Tab();
+            if (tab) {
+                await chrome.tabs.sendMessage(tab.id, { action: isEnabled ? "enableResizableNetworkMap" : "disableResizableNetworkMap" });
+            }
+        } catch (e) {
+            console.error('[COR3 Helper] Failed to toggle resizable network map:', e);
+            cor3LogError('popup.js', e, { action: 'toggleResizableNetworkMap' });
+        }
+    });
+}
+
 // Handle auto update markets toggle changes
 if (autoUpdateMarketsToggle) {
     autoUpdateMarketsToggle.addEventListener('change', () => {
@@ -3341,11 +4553,24 @@ if (autoUpdateMarketsToggle) {
     });
 }
 
+
 // Initialize status on load
 updateBackgroundStatus();
 updateNetworkFogStatus();
 updateMoveNotificationsStatus();
+updateResizableNetworkMapStatus();
 updateAutoUpdateMarketsStatus();
+
+// --- Toggles Show More/Less ---
+const togglesExtra = document.getElementById('togglesExtra');
+const togglesShowMoreBtn = document.getElementById('togglesShowMoreBtn');
+if (togglesShowMoreBtn && togglesExtra) {
+    togglesShowMoreBtn.addEventListener('click', () => {
+        const isHidden = togglesExtra.style.display === 'none';
+        togglesExtra.style.display = isHidden ? '' : 'none';
+        togglesShowMoreBtn.textContent = isHidden ? 'Show Less ▲' : 'Show More ▼';
+    });
+}
 
 // --- Auto Job Solver ---
 const autoJobSolverToggle = document.getElementById('autoJobSolverToggle');
@@ -3788,7 +5013,8 @@ autoJobsStartBtn.addEventListener('click', async () => {
             if (tab) {
                 await chrome.tabs.sendMessage(tab.id, {
                     action: "startAutoJobs",
-                    jobs: jobsToRun
+                    jobs: jobsToRun,
+                    settings: {}
                 });
             }
         } catch (e) {
@@ -3866,6 +5092,53 @@ autoClearIpsToggle.addEventListener('change', async () => {
         addAutoJobLog('🧹 Auto Clear IPs disabled', 'warn');
     }
     chrome.runtime.sendMessage({ action: "scheduleAutoClearIps" }).catch(() => {});
+});
+
+// --- Per-Market Cleanup (Dismiss Failed Jobs) ---
+async function dismissFailedJobsForMarket(marketKey) {
+    const storageKey = { home: 'marketData', dark: 'darkMarketData', soyuz: 'soyuzMarketData', usol: 'usolMarketData' }[marketKey];
+    const data = await chrome.storage.local.get(storageKey);
+    const md = data[storageKey];
+    if (!md || !md.recentJobs) return;
+    const failedJobs = md.recentJobs.filter(j => j.status === 'FAILED');
+    if (failedJobs.length === 0) return;
+    const marketId = MARKET_IDS[marketKey];
+    if (!marketId) return;
+    const tab = await getCor3Tab();
+    if (!tab) return;
+    for (let i = 0; i < failedJobs.length; i++) {
+        const job = failedJobs[i];
+        await chrome.tabs.sendMessage(tab.id, {
+            action: 'autoClearIpsCmd',
+            cmd: 'job.dismiss',
+            data: { marketId, jobId: job.id }
+        });
+        const fresh = await chrome.storage.local.get(storageKey);
+        const freshMd = fresh[storageKey];
+        if (freshMd && freshMd.recentJobs) {
+            freshMd.recentJobs = freshMd.recentJobs.filter(j => j.id !== job.id);
+            await chrome.storage.local.set({ [storageKey]: freshMd });
+        }
+        if (i < failedJobs.length - 1) await new Promise(r => setTimeout(r, 500));
+    }
+    addAutoJobLog(`🧹 Dismissed ${failedJobs.length} failed job(s) from ${marketKey} market`, 'info');
+    const refreshActions = { home: 'refreshMarket', dark: 'refreshDarkMarket', soyuz: 'refreshSoyuzMarket', usol: 'refreshUsolMarket' };
+    setTimeout(async () => {
+        try { await chrome.tabs.sendMessage(tab.id, { action: refreshActions[marketKey] }); } catch (e) {}
+    }, 1000);
+}
+['home', 'dark', 'soyuz', 'usol'].forEach(key => {
+    const btnId = { home: 'cleanupCoreMarketBtn', dark: 'cleanupDarkMarketBtn', soyuz: 'cleanupSoyuzMarketBtn', usol: 'cleanupUsolMarketBtn' }[key];
+    const btn = document.getElementById(btnId);
+    if (btn) {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try { await dismissFailedJobsForMarket(key); } catch (e) { console.error('[COR3 Helper] Cleanup error:', e); }
+            btn.disabled = false;
+            btn.textContent = '🧹';
+        });
+    }
 });
 
 // Collect all supported jobs WITHOUT filtering bugged ones (used to detect if only bugged remain)
