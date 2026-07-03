@@ -1942,7 +1942,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 });
 
-// Capture extension errors to IndexedDB for DevTools panel
+// Capture extension errors to IndexedDB
 window.addEventListener('error', (e) => {
     if (typeof cor3LogEntry === 'function') {
         cor3LogEntry('error-logs', (e.filename || '') + ':' + (e.lineno || 0) + ' ' + (e.message || ''), 'error');

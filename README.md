@@ -48,7 +48,6 @@ The use of automation tools may be detectable by the site's developers and could
 - **Check for Updates** — Compare your installed extension, web, and system versions against the latest on GitHub. It lets user know if an update is required for extension or if web/system versions are different from what's stored.
 - **Cache-First Design** — Data loads instantly from cache on popup open. Use the "Refresh All" button or per-section refresh buttons to fetch fresh data
 - **Real-Time Updates** — WebSocket listeners auto-update daily ops, markets, expeditions, decisions, inventory, mercenaries, loadout, and archived expeditions live when data arrives — even if the popup is opened before data is ready
-- **DevTools WS Inspector** — Built-in Chrome DevTools panel for real-time WebSocket message inspection and multi-category log viewer. Features include: category selector (WS Messages, Auto Job Solver, Auto Valuable Seller, Error Logs), direction/event/action/server column filtering for WS messages, level/message columns for log categories, format dropdown (Raw / JSON-pretty / Interactive Tree View with inline object/array previews), search with highlight & navigation inside message detail (including tree view traversal with auto-expand), export filtered data as JSON or Markdown table, paginated log display (1000 entries per page) with section selector, IndexedDB-backed storage with 24-hour auto-cleanup, per-category clear, and resizable columns/detail pane
 - **Lightweight** — Only intercepts existing WebSocket traffic and re-triggers some API calls that the game already sends
 
 ## Installation
@@ -105,10 +104,10 @@ See the parent project https://github.com/Femtoce11/cor3-helper.
 | `manifest.json`            | Extension manifest (Manifest V3) — permissions include storage, scripting, activeTab, tabs, alarms, sidePanel                     |
 | `popup.html`               | Popup UI (HTML + CSS) — includes auto job solver section, debug console, and all toggle UIs                                       |
 | `popup.js`                 | Popup logic, rendering, alarm management, auto job solver UI, debug console, live storage update listeners                        |
-| `console-logger.js`        | Console interceptor — captures console.log/warn/error in both MAIN world and extension contexts for DevTools log viewing          |
+| `console-logger.js`        | Console interceptor — captures console.log/warn/error in both MAIN world and extension contexts                                   |
 | `errors.js`                | Centralized error logging — stores errors to chrome.storage.local with source, message, stack, and context (max 200 entries)      |
-| `notepack.min.js`          | Bundled notepack.io 3.0.1 library — local copy of msgpack encoder/decoder used by the binary WS codec                            |
-| `msgpack-codec.js`         | Socket.IO v5 binary packet codec — converts between legacy 42[...] strings and binary msgpack WS frames using notepack.io        |
+| `notepack.min.js`          | Bundled notepack.io 3.0.1 library — local copy of msgpack encoder/decoder used by the binary WS codec                             |
+| `msgpack-codec.js`         | Socket.IO v5 binary packet codec — converts between legacy 42[...] strings and binary msgpack WS frames using notepack.io         |
 | `content-early.js`         | Injected at `document_start` — intercepts WebSocket/HTTP polling messages, WS send functions, D4RK path-through logic             |
 | `content.js`               | Injected at `document_idle` — relays data to storage, handles auto-refresh, auto job solver injection, notification repositioning |
 | `background.js`            | Service worker — auto finish all jobs scheduling, auto clear IPs scheduling, expedition polling, alarm management                 |
