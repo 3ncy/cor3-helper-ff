@@ -337,9 +337,7 @@ function collectJobsBg(marketData, darkMarketData, completedResults, serverMaint
 
 const BG_AUTO_JOBS_MAX_LOGS = 200;
 async function bgAutoJobLog(msg, level) {
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const entry = { time: timeStr, msg, level: level || 'info' };
+    const entry = { timestamp: new Date().toISOString(), msg, level: level || 'info' };
     // Append directly to persisted debug logs array (works even when popup is closed)
     try {
         const data = await chrome.storage.local.get('autoJobsDebugLogs');
@@ -371,12 +369,6 @@ async function scheduleAutoFinishAllBg() {
 
     // If jobs are currently running, don't schedule — will be called again when they finish
     if (autoJobsRunning) {
-        return;
-    }
-
-    // If an alarm is already pending, don't re-check (prevents duplicate "jobs available" messages)
-    const existingAlarm = await chrome.alarms.get('autoFinishAllJobs');
-    if (existingAlarm) {
         return;
     }
 
@@ -484,12 +476,6 @@ async function runAutoFinishAllBg() {
         return;
     }
 
-    // Refresh network map to get latest server maintenance data
-    try {
-        await chrome.tabs.sendMessage(tab.id, { action: 'autoClearIpsCmd', cmd: 'get.map', data: {} });
-    } catch (e) { /* best effort */ }
-    await new Promise(r => setTimeout(r, 2000));
-
     // Clear previously skipped (maintenance) jobs from completedResults so they can be retried.
     // collectJobsBg will re-evaluate reachability using the freshly updated serverMaintenanceMap.
     const { autoJobsCompletedResults: crPre } = await chrome.storage.local.get('autoJobsCompletedResults');
@@ -528,6 +514,7 @@ async function runAutoFinishAllBg() {
             await chrome.tabs.sendMessage(tab.id, refreshMsg);
         } catch (e) {
             bgAutoJobLog('🔄 Auto Finish All: failed to refresh markets — ' + (e.message || e), 'error');
+            cor3LogError('background.js', e, { action: 'autoFinishAll-refreshMarkets' });
             scheduleAutoFinishAllBg();
             return;
         }
@@ -569,7 +556,7 @@ async function runAutoFinishAllBg() {
             const { autoJobsTracker: existingTracker } = await chrome.storage.local.get('autoJobsTracker');
             const newJobIds = new Set(jobsToRun.map(j => j.jobId));
             const previousJobs = (existingTracker || []).filter(j =>
-                !newJobIds.has(j.jobId) && (j.status === 'done' || j.status === 'failed')
+                !newJobIds.has(j.jobId) && (j.status === 'done' || j.status === 'failed' || j.status === 'skipped' || j.status === 'bugged')
             );
             const mergedTracker = [...previousJobs, ...jobsToRun];
             await chrome.storage.local.set({ autoJobsRunning: true, autoJobsQueue: jobsToRun, autoJobsTracker: mergedTracker });
@@ -577,6 +564,7 @@ async function runAutoFinishAllBg() {
                 await chrome.tabs.sendMessage(tab.id, { action: "startAutoJobs", jobs: jobsToRun });
             } catch (e) {
                 bgAutoJobLog('🔄 Auto Finish All: failed to start — ' + (e.message || e), 'error');
+                cor3LogError('background.js', e, { action: 'autoFinishAll-startJobs' });
                 await chrome.storage.local.set({ autoJobsRunning: false });
             }
             // After jobs complete, storage listener will trigger re-schedule
@@ -941,6 +929,7 @@ async function runAutoClearIpsBg() {
 
         } catch (e) {
             bgAutoJobLog(`🧹 ${server.name}: error — ${e.message}`, 'error');
+            cor3LogError('background.js', e, { action: 'clearIps', server: server.name });
         }
 
         // Human-like delay between servers
