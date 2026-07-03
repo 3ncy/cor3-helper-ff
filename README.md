@@ -106,8 +106,9 @@ See the parent project https://github.com/Femtoce11/cor3-helper.
 | `popup.js`                 | Popup logic, rendering, alarm management, auto job solver UI, debug console, live storage update listeners                        |
 | `console-logger.js`        | Console interceptor — captures console.log/warn/error in both MAIN world and extension contexts                                   |
 | `errors.js`                | Centralized error logging — stores errors to chrome.storage.local with source, message, stack, and context (max 200 entries)      |
-| `notepack.min.js`          | Bundled notepack.io 3.0.1 library — local copy of msgpack encoder/decoder used by the binary WS codec                             |
-| `msgpack-codec.js`         | Socket.IO v5 binary packet codec — converts between legacy 42[...] strings and binary msgpack WS frames using notepack.io         |
+| `notepack-encode.js`       | Bundled notepack.io 3.0.1 library — local copy of msgpack encoder used by the binary WS codec                                     |
+| `notepack-decode.js`       | Bundled notepack.io 3.0.1 library — local copy of msgpack decoder used by the binary WS codec                                     |
+| `msgpack-codec.js`         | Socket.IO v5 binary packet codec — converts between legacy 42[...] strings and binary msgpack WS frames using the local codec     |
 | `content-early.js`         | Injected at `document_start` — intercepts WebSocket/HTTP polling messages, WS send functions, D4RK path-through logic             |
 | `content.js`               | Injected at `document_idle` — relays data to storage, handles auto-refresh, auto job solver injection, notification repositioning |
 | `background.js`            | Service worker — auto finish all jobs scheduling, auto clear IPs scheduling, expedition polling, alarm management                 |

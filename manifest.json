@@ -30,7 +30,8 @@
       ],
       "js": [
         "console-logger.js",
-        "notepack.min.js",
+        "notepack-decode.js",
+        "notepack-encode.js",
         "msgpack-codec.js",
         "content-early.js"
       ],

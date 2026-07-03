@@ -1,12 +1,12 @@
 // msgpack-codec.js — COR3 Helper msgpack + Socket.IO v5 binary packet codec
-// Uses notepack.io loaded locally via manifest content_scripts (notepack.min.js).
+// Uses notepack.io encode/decode functions loaded locally via manifest content_scripts.
 // Provides helpers to convert between legacy 42[...] string format and binary packets.
 
 (function (root) {
     'use strict';
 
-    // notepack.min.js is loaded before this script via manifest content_scripts,
-    // so root.notepack (window.notepack) is already available.
+    // notepack-encode.js and notepack-decode.js are loaded before this script via
+    // manifest content_scripts, so root.notepack (window.notepack) is already available.
     var notepackLib = root.notepack || null;
     var notepackReady = !!notepackLib;
 
@@ -16,7 +16,7 @@
         notepackLib = root.notepack || null;
         notepackReady = !!notepackLib;
         if (notepackLib) { cb(notepackLib); return; }
-        console.log('[COR3 Codec] notepack.io not available — check that notepack.min.js is loaded before msgpack-codec.js in manifest');
+        console.log('[COR3 Codec] notepack.io not available — check that notepack-encode.js and notepack-decode.js are loaded before msgpack-codec.js in manifest');
     }
 
     if (notepackReady) {
