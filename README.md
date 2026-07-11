@@ -41,6 +41,7 @@ The use of automation tools may be detectable by the site's developers and could
 - **Archived Expeditions** — View past expeditions with outcome, cost, risk, location, loot container details and item images. Auto-loaded on startup
 - **Multi-Alarm System** — Create multiple configurable alarms for any timer (daily ops, market job resets, expeditions). Each alarm has its own threshold, volume, continuous mode, and on/off toggle
 - **Move Notifications** — Option to move in-game notification toasts and history panel from the right side to the left side of the screen
+- **Secret Link/Server Finder** — Scans all known server IPs on the network map to discover hidden connections and servers. Sends `connect.ip` for each known IP, then compares before/after map data. Uses a toggle switch (auto-disables after scan) with progress and results shown in a log box. Reports new connections and new servers found
 - **Resizable Network Map** — Toggle to make the in-game network map window resizable via drag
 - **Helper-Only Mode** — Toggle to hide all automation features, converting the extension to a pure info/helper tool
 - **Auto Update Markets** — Toggle to automatically refresh market data when WebSocket events arrive
@@ -94,6 +95,7 @@ See the parent project https://github.com/Femtoce11/cor3-helper.
 - **Enable auto choose decision** for extension to automatically choose best decision according to scoring which is calculated by default/modified loot/risk modifiers.
 - **Enable auto send mercenary** for extension to send selected mercenary by itself after the current expedition ends.
 - **Enable auto choose mercenary** for extension to choose which mercenary to send for next expedition according to their cost and risk values across CORE and USOL markets. It only works if "auto-send" feature is turned on. Use "Auto-choose USOL first" to prioritize USOL mercs and "Ignore elite mercenary" to exclude elite mercs from selection.
+- **Secret Link/Server Finder** — Toggle the switch to enable. It scans all known server IPs by connecting to each one, then compares the network map before and after to discover any new hidden connections or servers. The toggle auto-disables when the scan completes.
 - **Alarms** — Click ➕ in the Alarms section to create a new alarm. Choose a timer source, set a threshold, and configure volume/continuous beeping. Toggle alarms on/off or edit/delete them anytime.
 - **Check for Updates** — Click the button at the bottom of the popup to see if a new version of extension is available on GitHub. It also shows if web/system versions are changed recently.
 
