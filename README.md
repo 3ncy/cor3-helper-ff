@@ -1,6 +1,6 @@
 # COR3 Helper
 
-A Firefox extension that enhances the [cor3.gg](https://cor3.gg) experience by monitoring markets, expeditions, daily ops, and providing timer alerts — all from a compact popup UI.
+A Firefox extension that enhances the [cor3.gg](https://os.cor3.gg) experience by monitoring markets, expeditions, daily ops, and providing timer alerts — all from a compact popup UI.
 
 ## Affiliation & Disclaimer
 
@@ -67,14 +67,14 @@ The use of automation tools may be detectable by the site's developers and could
    Click the gear icon in the top-right, choose **Install Add-on From File...**, and select the `.xpi` file you downloaded in Step 1.
 
 4. **Use the extension**  
-   Open [https://os.cor3.gg](https://cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
+   Open [https://os.cor3.gg](https://os.cor3.gg) and log in. Then open the COR3 Helper toolbar popup.
 
 ### Alternative approach
 Before the `.xpi` file of the extension for each release has been signed, it is still possible to install the extension via alternative means.
 
 Standard Firefox builds require all extensions to be signed, however it's possible to install unsigned extensions on [**Firefox Developer Edition**](https://www.mozilla.org/firefox/developer/), [**Firefox Nightly**](https://nightly.mozilla.org/), or off-brand Firefox versions, such as [Waterfox](https://www.waterfox.com/). Once you have one of those browsers, follow the instructions above. You might need to set `xpinstall.signatures.required` to `false` in `about:config`.
 
-*Alternatively*, you also may temporarily install the unsigned version via the `about:debugging` page in your Firefox browser. There select "This Firefox" -> "Load Temporary Add-on..." and select the `manifest.json` file from the downloaded repository. 
+*Alternatively*, you also may temporarily install the unsigned version via the `about:debugging` page in your Firefox browser. There select "This Firefox" -> "Load Temporary Add-on..." and select the [downloaded](https://github.com/3ncy/cor3-helper-ff/releases) unsigned `.zip` file, or the `manifest.json` file from the downloaded repository. 
 
 ## Installation to Chrome and Chromium browsers
 
@@ -130,7 +130,7 @@ See the parent project https://github.com/Femtoce11/cor3-helper.
 ## Requirements
 
 - Firefox-based browser
-- An active [cor3.gg](https://cor3.gg) account
+- An active [cor3.gg](https://os.cor3.gg) account
 
 ## License
 
